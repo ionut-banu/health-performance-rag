@@ -1,0 +1,57 @@
+# Channel configuration for ingestion scripts.
+# To add a new source: add an entry here and update schema.py's
+# `source` Literal type. No script changes needed.
+#
+# defaults: applied when the corresponding CLI flag is not provided.
+# CLI flags always take precedence over these values.
+#
+# skip_chapter_patterns: chapter titles matching any of these (case-insensitive
+# substring) are dropped entirely by chunk_by_chapters.py.
+# filler_text_patterns: sentence-level regexes stripped from kept chapters' text
+# by normalize.py. Edit these lists to tune filtering — no code changes needed.
+
+sources:
+  huberman:
+    channel_url: "https://www.youtube.com/@hubermanlab/videos"
+    label: "Huberman Lab"
+    defaults:
+      min_duration_minutes: 45  # drops clips/shorts; full episodes are 60-180min
+      after_date: null           # set e.g. "2023-01-01" to skip early episodes
+    # Chapter titles to drop entirely (case-insensitive substring match).
+    # Built from real chapter titles seen in data/raw_transcripts/huberman/*.json.
+    skip_chapter_patterns:
+      - "sponsor"
+      - "zero-cost support"
+      - "follow & subscribe"
+      - "acknowledgements"
+      - "closing remarks"
+      - "closing thoughts"
+      - "final thoughts"
+      - "conclusion"
+    # In-text sentence patterns to strip from kept chapters' transcript text.
+    filler_text_patterns:
+      - "this episode is brought to you by"
+      - "check out our sponsors?"
+      - "welcome back to the huberman lab podcast"
+      - "welcome to the huberman lab podcast"
+      - "i'm .*and i'm a professor of neurobiology"
+      - "brought to you by"
+  galpin:
+    channel_url: "https://www.youtube.com/@drandygalpin/videos"
+    label: "Andy Galpin — Perform"
+    defaults:
+      min_duration_minutes: 45
+      after_date: '2024-01-01'
+    skip_chapter_patterns:
+      - "sponsor"
+      - "zero-cost support"
+      - "acknowledgements"
+      - "closing remarks"
+      - "closing thoughts"
+      - "final thoughts"
+      - "conclusion"
+    filler_text_patterns:
+      - "this is perform with dr\\.? andy galpin"
+      - "i'm dr\\.? andy galpin"
+      - "thank you to (today's |our )?sponsors?"
+      - "brought to you by"
