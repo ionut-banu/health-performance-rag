@@ -114,7 +114,7 @@ Every ingested doc must conform to this shape (defined in `schema.py`):
 
 | Module | Status | What it covers in this repo |
 |---|---|---|
-| 1. Agentic RAG | course done / **project not started** | `minsearch` keyword index + retrieve→prompt→LLM loop |
+| 1. Agentic RAG | ✅ built | `rag/` — `minsearch` keyword index + retrieve→prompt→LLM (`rag()`) and agentic function-calling (`agentic_rag()`), OpenAI `gpt-4o-mini` |
 | 2. Vector Search | course done / **project not started** | Embeddings + PGVector, compare vs Module 1 |
 | 3. Orchestration | not started | Wrap ingestion in an Airflow DAG |
 | 4. Evaluation | not started | Hit-rate/MRR + LLM-as-judge |
