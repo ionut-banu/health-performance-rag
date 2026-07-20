@@ -57,7 +57,7 @@ def rag(
     query: str,
     num_results: int = 5,
     source: str | None = None,
-    method: str = "keyword",
+    method: str = "vector",  # Module 4 eval winner (see docs/evaluation.md)
 ) -> str:
     """Basic RAG: retrieve, stuff context into the prompt, answer in one call."""
     chunks = retrieve(query, num_results=num_results, source=source, method=method)
@@ -104,7 +104,7 @@ SEARCH_TOOL = {
 }
 
 
-def _run_search_tool(args: dict, method: str = "keyword") -> list[dict]:
+def _run_search_tool(args: dict, method: str = "vector") -> list[dict]:
     chunks = retrieve(
         args["query"],
         num_results=args.get("num_results", 5),
@@ -123,7 +123,7 @@ def _run_search_tool(args: dict, method: str = "keyword") -> list[dict]:
     ]
 
 
-def agentic_rag(query: str, verbose: bool = False, method: str = "keyword") -> str:
+def agentic_rag(query: str, verbose: bool = False, method: str = "vector") -> str:
     """Agentic RAG: the model decides when/what to search via function calling."""
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},

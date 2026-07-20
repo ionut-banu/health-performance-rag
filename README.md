@@ -33,7 +33,8 @@ answers can be compared keyword-vs-semantic:
 
 - **Keyword (Module 1):** in-memory `minsearch` TF-IDF index.
 - **Vector (Module 2):** on-disk `sqlitesearch` HNSW index over local
-  `multi-qa-MiniLM-L6-cos-v1` embeddings (384-dim, free/offline).
+  `multi-qa-MiniLM-L6-cos-v1` embeddings (384-dim, free/offline). **Default** — it wins the
+  Module 4 retrieval eval.
 
 ```bash
 uv sync
@@ -42,13 +43,32 @@ uv sync
 # First run downloads the embedding model (~90MB) to the Hugging Face cache.
 uv run rag/build_vector_index.py
 
-# Ask a question (needs OPENAI_API_KEY in .env; see .env.example).
-uv run rag/cli.py "how do I fall asleep faster?" --retriever vector
-uv run rag/cli.py "how do I fall asleep faster?" --retriever keyword   # baseline
-uv run rag/cli.py "compare Huberman and Galpin on caffeine timing" --agentic --retriever vector
+# Ask a question (needs OPENAI_API_KEY in .env; see .env.example). Vector is the default.
+uv run rag/cli.py "how do I fall asleep faster?"
+uv run rag/cli.py "how do I fall asleep faster?" --retriever keyword   # keyword baseline
+uv run rag/cli.py "compare Huberman and Galpin on caffeine timing" --agentic
 
 # Eyeball keyword vs vector retrieval side by side (no LLM calls).
 uv run rag/compare_retrieval.py
+```
+
+## Evaluation (Module 4)
+
+Both retrieval and answer generation are evaluated against a 750-pair, LLM-generated
+ground-truth set, and the winners are wired in as defaults. Full report + reproduce steps:
+[docs/evaluation.md](docs/evaluation.md).
+
+- **Retrieval** (hit-rate / MRR) — **vector beats keyword** (MRR 0.413 vs 0.377), so vector is
+  the default retriever.
+- **Generation** (LLM-as-judge) — basic RAG ≈ agentic (0.783 vs 0.800, a tie); basic stays
+  default for cost/latency, `--agentic` available.
+- **Finding** — oversized chapter chunks depress *both* retrievers, pointing to sub-chunking as
+  the top Module 6 improvement.
+
+```bash
+uv run eval/generate_ground_truth.py --sample-size 150   # -> eval/ground_truth.jsonl
+uv run eval/evaluate_retrieval.py                        # -> eval/results/retrieval.md
+uv run eval/evaluate_llm.py                              # -> eval/results/llm_judge.md
 ```
 
 ## Status

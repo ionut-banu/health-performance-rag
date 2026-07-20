@@ -29,8 +29,9 @@ def main():
     parser.add_argument(
         "--retriever",
         choices=["keyword", "vector"],
-        default="keyword",
-        help="Retrieval backend: keyword (Module 1) or vector (Module 2).",
+        default="vector",
+        help="Retrieval backend: vector (Module 2, default — Module 4 eval winner) "
+        "or keyword (Module 1).",
     )
     parser.add_argument("--num-results", type=int, default=5)
     args = parser.parse_args()

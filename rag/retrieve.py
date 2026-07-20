@@ -34,7 +34,7 @@ def retrieve(
     query: str,
     num_results: int = 5,
     source: str | None = None,
-    method: str = "keyword",
+    method: str = "vector",  # Module 4 eval winner: higher MRR/HR@1 than keyword
 ) -> list[dict]:
     """Retrieve chunks for a query via the chosen backend."""
     if method == "keyword":

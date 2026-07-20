@@ -134,7 +134,7 @@ Every ingested doc must conform to this shape (defined in `schema.py`):
 | 1. Agentic RAG | ✅ built | `rag/` — `minsearch` keyword index + retrieve→prompt→LLM (`rag()`) and agentic function-calling (`agentic_rag()`), OpenAI `gpt-4o-mini` |
 | 2. Vector Search | ✅ built | `rag/vector_search.py` — `sqlitesearch` HNSW index over local `multi-qa-MiniLM-L6-cos-v1` embeddings (`rag/embeddings.py`); `rag/retrieve.py` dispatches keyword-vs-vector via `--retriever`; `rag/compare_retrieval.py` shows the side-by-side. **PGVector deferred to Module 7** (kept infra-free to respect containerization gating). |
 | 3. Orchestration | not started | Wrap ingestion in an Airflow DAG |
-| 4. Evaluation | not started | Hit-rate/MRR + LLM-as-judge |
+| 4. Evaluation | ✅ built | `eval/` — 750-pair LLM-generated ground truth; retrieval hit-rate/MRR (`evaluate_retrieval.py`) and LLM-as-judge (`evaluate_llm.py`). **Vector beats keyword** (MRR 0.413 vs 0.377) → now the default retriever; basic≈agentic generation (tie) → basic stays default. Report + reproduce steps in `docs/evaluation.md`. |
 | 5. Monitoring | not started | Feedback collection + dashboard (5+ charts) |
 | 6. Best Practices | not started | Hybrid search + reranking |
 | 7. End-to-end | not started | Docker-compose, polished interface |
@@ -159,8 +159,8 @@ against this rubric — it defines what scores full points.
 |---|---|---|
 | Problem description | 2 | Clear problem statement in README |
 | Retrieval flow | 2 | Knowledge base + LLM both used |
-| Retrieval evaluation | 2 | Multiple approaches evaluated |
-| LLM evaluation | 2 | Multiple approaches evaluated |
+| Retrieval evaluation | 2 | Multiple approaches evaluated — ✅ keyword vs vector (`docs/evaluation.md`) |
+| LLM evaluation | 2 | Multiple approaches evaluated — ✅ basic vs agentic (LLM-as-judge) |
 | Interface | 2 | UI (Streamlit) or API (FastAPI) |
 | Ingestion pipeline | 2 | Automated (Airflow DAG) |
 | Monitoring | 2 | User feedback + dashboard (5+ charts) |
