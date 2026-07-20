@@ -6,9 +6,12 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "minsearch>=0.0.4",
+    "numpy>=2.5.1",
     "openai>=1.0.0",
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0.3",
+    "sentence-transformers>=5.6.0",
+    "sqlitesearch>=0.1.2",
     "tiktoken>=0.8.0",
     "youtube-transcript-api>=1.2.4",
     "yt-dlp>=2026.6.9",

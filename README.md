@@ -21,10 +21,35 @@ Most health advice online is either oversimplified clickbait or buried in hours 
 ## Tech stack
 
 - **Orchestration:** Apache Airflow
-- **Retrieval:** Hybrid search (vector + keyword), PGVector
+- **Retrieval:** Keyword search (`minsearch`) + semantic vector search (`sqlitesearch`, local `sentence-transformers` embeddings); hybrid + PGVector planned
 - **Evaluation:** Retrieval metrics + LLM-as-a-judge
 - **Interface:** *(TBD — Streamlit/FastAPI)*
 - **Monitoring:** *(TBD)*
+
+## Retrieval (Modules 1–2)
+
+Two retrieval backends run over the same `data/documents.jsonl` knowledge base, so
+answers can be compared keyword-vs-semantic:
+
+- **Keyword (Module 1):** in-memory `minsearch` TF-IDF index.
+- **Vector (Module 2):** on-disk `sqlitesearch` HNSW index over local
+  `multi-qa-MiniLM-L6-cos-v1` embeddings (384-dim, free/offline).
+
+```bash
+uv sync
+
+# Build the vector index once (embeds all chunks -> data/vector_index.db).
+# First run downloads the embedding model (~90MB) to the Hugging Face cache.
+uv run rag/build_vector_index.py
+
+# Ask a question (needs OPENAI_API_KEY in .env; see .env.example).
+uv run rag/cli.py "how do I fall asleep faster?" --retriever vector
+uv run rag/cli.py "how do I fall asleep faster?" --retriever keyword   # baseline
+uv run rag/cli.py "compare Huberman and Galpin on caffeine timing" --agentic --retriever vector
+
+# Eyeball keyword vs vector retrieval side by side (no LLM calls).
+uv run rag/compare_retrieval.py
+```
 
 ## Status
 

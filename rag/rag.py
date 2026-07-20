@@ -13,7 +13,7 @@ import os
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from search import build_index, search
+from retrieve import retrieve
 
 load_dotenv()
 
@@ -30,16 +30,8 @@ Lab and Andy Galpin's Perform). Follow these rules:
 available episodes." Do not guess.
 - Be concise and practical."""
 
-# Reuse a single client and index across calls.
+# Reuse a single client across calls (indexes are cached in retrieve.py).
 _client = OpenAI()
-_index = None
-
-
-def get_index():
-    global _index
-    if _index is None:
-        _index = build_index()
-    return _index
 
 
 def _timestamp_link(chunk: dict) -> str:
@@ -61,9 +53,14 @@ def build_context(chunks: list[dict]) -> str:
     return "\n\n---\n\n".join(blocks)
 
 
-def rag(query: str, num_results: int = 5, source: str | None = None) -> str:
+def rag(
+    query: str,
+    num_results: int = 5,
+    source: str | None = None,
+    method: str = "keyword",
+) -> str:
     """Basic RAG: retrieve, stuff context into the prompt, answer in one call."""
-    chunks = search(get_index(), query, num_results=num_results, source=source)
+    chunks = retrieve(query, num_results=num_results, source=source, method=method)
     context = build_context(chunks)
     user_prompt = f"Question: {query}\n\nContext:\n{context}"
 
@@ -107,12 +104,12 @@ SEARCH_TOOL = {
 }
 
 
-def _run_search_tool(args: dict) -> list[dict]:
-    chunks = search(
-        get_index(),
+def _run_search_tool(args: dict, method: str = "keyword") -> list[dict]:
+    chunks = retrieve(
         args["query"],
         num_results=args.get("num_results", 5),
         source=args.get("source"),
+        method=method,
     )
     # Return only the fields the model needs to answer + cite.
     return [
@@ -126,7 +123,7 @@ def _run_search_tool(args: dict) -> list[dict]:
     ]
 
 
-def agentic_rag(query: str, verbose: bool = False) -> str:
+def agentic_rag(query: str, verbose: bool = False, method: str = "keyword") -> str:
     """Agentic RAG: the model decides when/what to search via function calling."""
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -150,7 +147,7 @@ def agentic_rag(query: str, verbose: bool = False) -> str:
             args = json.loads(call.function.arguments)
             if verbose:
                 print(f"  [tool call] search({args})")
-            results = _run_search_tool(args)
+            results = _run_search_tool(args, method=method)
             messages.append(
                 {
                     "role": "tool",

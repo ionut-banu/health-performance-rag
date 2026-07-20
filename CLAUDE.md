@@ -47,9 +47,13 @@ Run in this order. Each step's output feeds the next.
 ## Next steps (in order)
 
 1. Run `fetch_transcripts.py --source huberman` to completion (200/315 fetched so far),
-   then re-run `build_documents.py` to pick up the rest.
-2. Start on Module 1 (`minsearch` keyword index + retrieve→prompt→LLM loop) against
-   `data/documents.jsonl` — the project-not-started row in the Build sequence table below.
+   then re-run `build_documents.py` to pick up the rest. After any change to
+   `data/documents.jsonl`, rebuild the vector index too: `rm data/vector_index.db &&
+   uv run rag/build_vector_index.py` (the keyword `minsearch` index rebuilds in-memory
+   on each run, but the vector `.db` is persisted and won't refresh on its own).
+2. Modules 1 (Agentic RAG) and 2 (Vector Search) are ✅ built. Next unbuilt module in the
+   Build sequence below is Module 3 (Airflow orchestration) or Module 4 (Evaluation —
+   now has two retrieval approaches, keyword + vector, to score against a ground-truth set).
 
 ## Chunking strategy
 
@@ -66,6 +70,19 @@ Chapters are confirmed populated on both Huberman Lab and Galpin episodes.
   punctuation, so a naive `.!?` split treats a whole chapter as one sentence). Patterns
   also live in `sources.yaml` (`filler_text_patterns`).
 - **Recipes**: atomic — one recipe = one chunk, never split.
+
+> ⚠️ **Known limitation — chapter chunks are too large for the embedding model (Module 2).**
+> Chapters run long: median chunk ≈ **1,289 tokens**, p90 ≈ 2,184, max 10,719. But
+> `multi-qa-MiniLM-L6-cos-v1` truncates at **512 tokens**, so **~93% of chunks (4,896/5,269)**
+> have their tail silently dropped from the vector — semantic search effectively "sees" only
+> the first ~40% of a typical chapter, and content in the back of a chapter is unreachable by
+> vector search. (Keyword `minsearch` is unaffected — it indexes the full text.) One coarse
+> 384-dim vector per 10-min chapter also dilutes precision.
+> **Fix deferred:** sub-chunk long chapters into ~256–400-token overlapping windows (the
+> `chunk_by_tokens` machinery already exists — extend it to cap *within* chapters too, keeping
+> `chapter_title` + timestamps on each sub-chunk). **Measure** the hit-rate impact in Module 4;
+> **apply** the re-chunk as a Module 6 (best practices) change. Requires re-chunk → re-embed →
+> rebuild `data/vector_index.db`.
 
 ## Unified document schema
 
@@ -115,7 +132,7 @@ Every ingested doc must conform to this shape (defined in `schema.py`):
 | Module | Status | What it covers in this repo |
 |---|---|---|
 | 1. Agentic RAG | ✅ built | `rag/` — `minsearch` keyword index + retrieve→prompt→LLM (`rag()`) and agentic function-calling (`agentic_rag()`), OpenAI `gpt-4o-mini` |
-| 2. Vector Search | course done / **project not started** | Embeddings + PGVector, compare vs Module 1 |
+| 2. Vector Search | ✅ built | `rag/vector_search.py` — `sqlitesearch` HNSW index over local `multi-qa-MiniLM-L6-cos-v1` embeddings (`rag/embeddings.py`); `rag/retrieve.py` dispatches keyword-vs-vector via `--retriever`; `rag/compare_retrieval.py` shows the side-by-side. **PGVector deferred to Module 7** (kept infra-free to respect containerization gating). |
 | 3. Orchestration | not started | Wrap ingestion in an Airflow DAG |
 | 4. Evaluation | not started | Hit-rate/MRR + LLM-as-judge |
 | 5. Monitoring | not started | Feedback collection + dashboard (5+ charts) |

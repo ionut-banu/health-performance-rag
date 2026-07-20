@@ -3,6 +3,7 @@ CLI for Module 1 RAG.
 
 Usage:
     uv run rag/cli.py "how much protein should I eat to build muscle?"
+    uv run rag/cli.py "how do I fall asleep faster?" --retriever vector
     uv run rag/cli.py "compare Huberman and Galpin on caffeine timing" --agentic
     uv run rag/cli.py "best exercises for VO2 max?" --source galpin --num-results 8
 """
@@ -25,13 +26,24 @@ def main():
         default=None,
         help="Restrict retrieval to a single source (basic RAG only).",
     )
+    parser.add_argument(
+        "--retriever",
+        choices=["keyword", "vector"],
+        default="keyword",
+        help="Retrieval backend: keyword (Module 1) or vector (Module 2).",
+    )
     parser.add_argument("--num-results", type=int, default=5)
     args = parser.parse_args()
 
     if args.agentic:
-        answer = agentic_rag(args.query, verbose=True)
+        answer = agentic_rag(args.query, verbose=True, method=args.retriever)
     else:
-        answer = rag(args.query, num_results=args.num_results, source=args.source)
+        answer = rag(
+            args.query,
+            num_results=args.num_results,
+            source=args.source,
+            method=args.retriever,
+        )
 
     print("\n" + answer)
 
