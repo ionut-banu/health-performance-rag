@@ -1,6 +1,10 @@
 .env
 
 data/*
+# Commit the built knowledge base so the repo is reproducible without a full
+# YouTube re-fetch (32MB, well under GitHub's limit). Everything else in data/
+# (raw transcripts, episode catalogs, the regenerable vector index) stays ignored.
+!data/documents.jsonl
 
 __pycache__/
 *.pyc
