@@ -59,10 +59,16 @@ def rag(
     source: str | None = None,
     method: str = "hybrid",  # Module 6 eval winner (see docs/evaluation.md)
     rerank: bool = True,
+    rewrite: bool = False,
 ) -> str:
     """Basic RAG: retrieve, stuff context into the prompt, answer in one call."""
     chunks = retrieve(
-        query, num_results=num_results, source=source, method=method, rerank=rerank
+        query,
+        num_results=num_results,
+        source=source,
+        method=method,
+        rerank=rerank,
+        rewrite=rewrite,
     )
     context = build_context(chunks)
     user_prompt = f"Question: {query}\n\nContext:\n{context}"
@@ -107,13 +113,16 @@ SEARCH_TOOL = {
 }
 
 
-def _run_search_tool(args: dict, method: str = "hybrid", rerank: bool = True) -> list[dict]:
+def _run_search_tool(
+    args: dict, method: str = "hybrid", rerank: bool = True, rewrite: bool = False
+) -> list[dict]:
     chunks = retrieve(
         args["query"],
         num_results=args.get("num_results", 5),
         source=args.get("source"),
         method=method,
         rerank=rerank,
+        rewrite=rewrite,
     )
     # Return only the fields the model needs to answer + cite.
     return [
@@ -128,7 +137,11 @@ def _run_search_tool(args: dict, method: str = "hybrid", rerank: bool = True) ->
 
 
 def agentic_rag(
-    query: str, verbose: bool = False, method: str = "hybrid", rerank: bool = True
+    query: str,
+    verbose: bool = False,
+    method: str = "hybrid",
+    rerank: bool = True,
+    rewrite: bool = False,
 ) -> str:
     """Agentic RAG: the model decides when/what to search via function calling."""
     messages = [
@@ -153,7 +166,7 @@ def agentic_rag(
             args = json.loads(call.function.arguments)
             if verbose:
                 print(f"  [tool call] search({args})")
-            results = _run_search_tool(args, method=method, rerank=rerank)
+            results = _run_search_tool(args, method=method, rerank=rerank, rewrite=rewrite)
             messages.append(
                 {
                     "role": "tool",
