@@ -47,14 +47,19 @@ def build_documents_for_source(source: str, source_config: dict) -> list[Documen
 
         chunks = chunk_transcript(transcript, skip_chapter_patterns)
 
-        for i, chunk in enumerate(chunks):
+        for chunk in chunks:
             text = normalize(chunk["segments"], filler_text_patterns)
             if not text:
                 continue
 
+            # parent_chunk_id is the id this chunk's chapter would have had before
+            # sub-chunking, so evaluation ground truth collected on chapter-sized
+            # chunks still resolves after the split (see docs/evaluation.md).
+            parent_chunk_id = f"{source}_{transcript['video_id']}_{chunk['chapter_index']}"
+
             documents.append(
                 Document(
-                    id=f"{source}_{transcript['video_id']}_{i}",
+                    id=f"{parent_chunk_id}_{chunk['sub_index']}",
                     source=source,
                     content_type="transcript",
                     title=transcript["title"],
@@ -66,6 +71,9 @@ def build_documents_for_source(source: str, source_config: dict) -> list[Documen
                         "end_timestamp": chunk["end_timestamp"],
                         "upload_date": transcript.get("upload_date"),
                         "chapter_title": chunk["chapter_title"],
+                        "parent_chunk_id": parent_chunk_id,
+                        "chapter_index": chunk["chapter_index"],
+                        "sub_index": chunk["sub_index"],
                     },
                 )
             )

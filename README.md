@@ -21,8 +21,8 @@ Most health advice online is either oversimplified clickbait or buried in hours 
 ## Tech stack
 
 - **Orchestration:** Apache Airflow
-- **Retrieval:** Keyword search (`minsearch`) + semantic vector search (`sqlitesearch`, local `sentence-transformers` embeddings); hybrid + PGVector planned
-- **Evaluation:** Retrieval metrics + LLM-as-a-judge
+- **Retrieval:** Hybrid search — keyword (`minsearch`) + vector (`sqlitesearch`, local `sentence-transformers` embeddings) fused with RRF, then cross-encoder re-ranking
+- **Evaluation:** Hit-rate/MRR against an LLM-generated ground-truth set + LLM-as-a-judge
 - **Interface:** *(TBD — Streamlit/FastAPI)*
 - **Monitoring:** *(TBD)*
 
@@ -53,21 +53,27 @@ uv run ingestion/build_documents.py                       # chunk + normalize ->
 uv run rag/build_vector_index.py                          # re-embed the rebuilt KB
 ```
 
-## Retrieval (Modules 1–2)
+## Retrieval
 
-Two retrieval backends run over the same `data/documents.jsonl` knowledge base, so
-answers can be compared keyword-vs-semantic:
+The knowledge base is chunked into ~350-token overlapping windows within each chapter, and
+queried through a pipeline whose every stage was chosen by measurement:
 
-- **Keyword (Module 1):** in-memory `minsearch` TF-IDF index.
-- **Vector (Module 2):** on-disk `sqlitesearch` HNSW index over local
-  `multi-qa-MiniLM-L6-cos-v1` embeddings (384-dim, free/offline). **Default** — it wins the
-  Module 4 retrieval eval.
+1. **Keyword** — in-memory `minsearch` TF-IDF index.
+2. **Vector** — on-disk `sqlitesearch` HNSW index over local `multi-qa-MiniLM-L6-cos-v1`
+   embeddings (384-dim, free/offline).
+3. **Hybrid** — the two fused with Reciprocal Rank Fusion.
+4. **Re-ranking** — a local cross-encoder reorders the fused candidates.
+
+**Hybrid + re-ranking is the default**, and it roughly doubles top-1 accuracy versus the
+keyword baseline (HR@1 0.31 → 0.52). Query rewriting is implemented but **off by default** —
+it measurably hurt (see [docs/evaluation.md](docs/evaluation.md)).
 
 ```bash
-uv run rag/cli.py "how do I fall asleep faster?"                      # vector (default)
-uv run rag/cli.py "how do I fall asleep faster?" --retriever keyword  # keyword baseline
+uv run rag/cli.py "how do I fall asleep faster?"                      # hybrid + rerank (default)
+uv run rag/cli.py "how do I fall asleep faster?" --retriever keyword  # Module 1 baseline
+uv run rag/cli.py "how do I fall asleep faster?" --no-rerank          # skip the cross-encoder
 uv run rag/cli.py "compare Huberman and Galpin on caffeine timing" --agentic
-uv run rag/compare_retrieval.py                                       # keyword vs vector, side by side (no LLM)
+uv run rag/compare_retrieval.py                                       # backends side by side (no LLM)
 ```
 
 ## Evaluation (Module 4)
@@ -76,12 +82,22 @@ Both retrieval and answer generation are evaluated against a 750-pair, LLM-gener
 ground-truth set, and the winners are wired in as defaults. Full report + reproduce steps:
 [docs/evaluation.md](docs/evaluation.md).
 
-- **Retrieval** (hit-rate / MRR) — **vector beats keyword** (MRR 0.413 vs 0.377), so vector is
-  the default retriever.
+- **Retrieval** (hit-rate / MRR) — measured across four approaches; **hybrid + cross-encoder
+  re-ranking wins** and is the default:
+
+  | Approach | HR@1 | HR@5 | MRR |
+  |---|---|---|---|
+  | keyword | 0.308 | 0.499 | 0.394 |
+  | vector | 0.356 | 0.529 | 0.428 |
+  | hybrid | 0.387 | 0.640 | 0.495 |
+  | **hybrid + re-rank** | **0.523** | **0.741** | **0.614** |
+
 - **Generation** (LLM-as-judge) — basic RAG ≈ agentic (0.783 vs 0.800, a tie); basic stays
   default for cost/latency, `--agentic` available.
-- **Finding** — oversized chapter chunks depress *both* retrievers, pointing to sub-chunking as
-  the top Module 6 improvement.
+- **Query rewriting** — implemented and evaluated, but it *lowered* MRR (0.491 vs 0.602), so it
+  ships disabled. The eval questions are already specific, and rewriting made them generic.
+- **Progress** — retrieval MRR improved **+49%** (0.413 → 0.614) from Modules 4→6, measured on
+  the same 750 pairs.
 
 ```bash
 uv run eval/generate_ground_truth.py --sample-size 150   # -> eval/ground_truth.jsonl
@@ -105,7 +121,9 @@ addressed (for peer reviewers):
 | Interface | 🚧 1/2 | CLI ([`rag/cli.py`](rag/cli.py)); UI/API planned (Module 7) |
 | Monitoring | ⬜ | planned (Module 5) |
 | Containerization | ⬜ | planned (Module 7 — docker-compose) |
-| Hybrid search · re-ranking · query rewriting (bonus) | ⬜ | planned (Module 6) |
+| Hybrid search (bonus) | ✅ | RRF in [`rag/retrieve.py`](rag/retrieve.py) — the default |
+| Document re-ranking (bonus) | ✅ | cross-encoder [`rag/rerank.py`](rag/rerank.py) — biggest single gain |
+| User query rewriting (bonus) | ✅ | [`rag/query_rewrite.py`](rag/query_rewrite.py) — evaluated, measured harmful, off by default |
 
 ## Status
 

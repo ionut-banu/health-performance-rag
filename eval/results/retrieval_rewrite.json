@@ -1,0 +1,65 @@
+{
+  "ground_truth_pairs": 250,
+  "embedding_model": "multi-qa-MiniLM-L6-cos-v1",
+  "approaches": [
+    "hybrid+rerank",
+    "hybrid+rerank+rewrite"
+  ],
+  "overall": {
+    "hybrid+rerank": {
+      "hr@1": 0.5,
+      "hr@3": 0.672,
+      "hr@5": 0.744,
+      "hr@10": 0.788,
+      "mrr": 0.6019,
+      "n": 250
+    },
+    "hybrid+rerank+rewrite": {
+      "hr@1": 0.396,
+      "hr@3": 0.556,
+      "hr@5": 0.624,
+      "hr@10": 0.676,
+      "mrr": 0.4912,
+      "n": 250
+    }
+  },
+  "buckets": {
+    "hybrid+rerank": {
+      "short (1 sub-chunk)": {
+        "hr@1": 0.6,
+        "hr@3": 0.6,
+        "hr@5": 0.6,
+        "hr@10": 0.6,
+        "mrr": 0.6,
+        "n": 5
+      },
+      "long (2+ sub-chunks)": {
+        "hr@1": 0.498,
+        "hr@3": 0.6735,
+        "hr@5": 0.7469,
+        "hr@10": 0.7918,
+        "mrr": 0.6019,
+        "n": 245
+      }
+    },
+    "hybrid+rerank+rewrite": {
+      "short (1 sub-chunk)": {
+        "hr@1": 0.4,
+        "hr@3": 0.4,
+        "hr@5": 0.4,
+        "hr@10": 0.4,
+        "mrr": 0.4,
+        "n": 5
+      },
+      "long (2+ sub-chunks)": {
+        "hr@1": 0.3959,
+        "hr@3": 0.5592,
+        "hr@5": 0.6286,
+        "hr@10": 0.6816,
+        "mrr": 0.4931,
+        "n": 245
+      }
+    }
+  },
+  "winner_by_mrr": "hybrid+rerank"
+}

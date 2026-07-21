@@ -28,22 +28,30 @@ def main():
     )
     parser.add_argument(
         "--retriever",
-        choices=["keyword", "vector"],
-        default="vector",
-        help="Retrieval backend: vector (Module 2, default — Module 4 eval winner) "
-        "or keyword (Module 1).",
+        choices=["keyword", "vector", "hybrid"],
+        default="hybrid",
+        help="Retrieval backend. hybrid (default) fuses keyword + vector and won the "
+        "Module 6 evaluation; keyword and vector are the Module 1/2 baselines.",
+    )
+    parser.add_argument(
+        "--no-rerank",
+        action="store_true",
+        help="Skip the cross-encoder re-ranking pass (faster, but measurably worse).",
     )
     parser.add_argument("--num-results", type=int, default=5)
     args = parser.parse_args()
 
     if args.agentic:
-        answer = agentic_rag(args.query, verbose=True, method=args.retriever)
+        answer = agentic_rag(
+            args.query, verbose=True, method=args.retriever, rerank=not args.no_rerank
+        )
     else:
         answer = rag(
             args.query,
             num_results=args.num_results,
             source=args.source,
             method=args.retriever,
+            rerank=not args.no_rerank,
         )
 
     print("\n" + answer)

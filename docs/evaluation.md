@@ -1,61 +1,98 @@
-# Evaluation (Module 4)
+# Evaluation
 
-Two things are measured and fed back into the system's defaults: **which retriever**
-(keyword vs vector) and **which answer generator** (basic vs agentic) works best.
+Every retrieval and generation choice in this project is measured against a fixed
+ground-truth set, and the winner is wired in as the default. This is the evidence for the
+rubric's *"multiple approaches are evaluated, and the best one is used."*
 
 ## Summary
 
-| Axis | Approaches compared | Winner | Now the default? |
+| Axis | Approaches compared | Winner | Default? |
 |---|---|---|---|
-| Retrieval | keyword (`minsearch`) vs vector (`sqlitesearch`) | **vector** (MRR 0.413 vs 0.377) | ✅ yes — default retriever |
-| Generation | basic `rag()` vs `agentic_rag()` | agentic, but a statistical tie (0.800 vs 0.783) | ❌ no — basic stays default (see below) |
+| Retrieval | keyword · vector · hybrid · hybrid+rerank | **hybrid + cross-encoder re-rank** (MRR 0.614) | ✅ yes |
+| Query rewriting | with vs without | **without** — rewriting measurably *hurt* | ✅ off |
+| Generation | basic `rag()` vs `agentic_rag()` | tie (0.783 vs 0.800) | basic (cost/latency) |
 
-**Headline finding:** oversized chapter-sized chunks depress *both* retrievers — every
-question about a `≤512`-token chunk scores far higher than one about a long chunk, even for
-keyword search, which isn't truncated. So the highest-leverage next improvement is
-**sub-chunking** (deferred to Module 6), not swapping the embedding model.
+**Headline:** retrieval MRR went **0.413 → 0.614 (+49%)** and HR@1 **0.316 → 0.523 (+65%)**
+across Modules 4→6, measured on the *same* 750 pairs.
 
 ## Methodology
 
-- **Ground truth** ([eval/ground_truth.jsonl](../eval/ground_truth.jsonl)) — 750 `question → chunk_id`
-  pairs. For 150 chunks (stratified by source), the LLM wrote ~5 realistic user questions each,
-  phrased *not* to quote the transcript so keyword search can't win on lexical overlap. The full
-  chunk text is shown to the generator so questions can target the *tail* of long chapters — the
-  part the vector index truncates. Script: [generate_ground_truth.py](../eval/generate_ground_truth.py).
-- **Retrieval** — for each pair, retrieve top-10 with each backend; a "hit" means the source chunk
-  appears in the results. Report **hit-rate@k** and **MRR** ([metrics.py](../eval/metrics.py),
-  unit-tested). Script: [evaluate_retrieval.py](../eval/evaluate_retrieval.py).
+- **Ground truth** ([eval/ground_truth.jsonl](../eval/ground_truth.jsonl)) — 750
+  `question → chunk_id` pairs. For 150 chunks (stratified by source) the LLM wrote ~5 realistic
+  user questions each, phrased *not* to quote the transcript so keyword search can't win on
+  lexical overlap. Script: [generate_ground_truth.py](../eval/generate_ground_truth.py).
+- **Retrieval** — retrieve top-10 per approach; a "hit" means the source chunk appears.
+  Report **hit-rate@k** and **MRR** ([metrics.py](../eval/metrics.py), unit-tested).
+  Script: [evaluate_retrieval.py](../eval/evaluate_retrieval.py).
+- **Comparability across the Module 6 re-chunk** — sub-chunking renumbers documents, which would
+  normally invalidate the ground truth. Each sub-chunk therefore records a `parent_chunk_id`
+  equal to the id its chapter had *before* splitting, and the hit test accepts either id. The
+  same 750 pairs score both corpora, so before/after numbers are directly comparable.
 - **Generation** — LLM-as-judge: `gpt-4o-mini` grades each answer against the reference chunk as
-  RELEVANT (1.0) / PARTLY_RELEVANT (0.5) / NON_RELEVANT (0.0), on a 60-question sample.
+  RELEVANT (1.0) / PARTLY (0.5) / NON (0.0), on a 60-question sample.
   Script: [evaluate_llm.py](../eval/evaluate_llm.py).
 
 ## Retrieval results
 
-| Method | HR@1 | HR@3 | HR@5 | HR@10 | MRR |
+Current corpus: 27,085 sub-chunks (see [Module 6](#module-6-what-actually-moved-the-needle)).
+
+| Approach | HR@1 | HR@3 | HR@5 | HR@10 | MRR |
 |---|---|---|---|---|---|
-| keyword | 0.264 | 0.441 | 0.532 | **0.635** | 0.377 |
-| **vector** | **0.316** | **0.485** | **0.541** | 0.620 | **0.413** |
+| keyword | 0.308 | 0.444 | 0.499 | 0.601 | 0.394 |
+| vector | 0.356 | 0.469 | 0.529 | 0.599 | 0.428 |
+| hybrid (RRF) | 0.387 | 0.571 | 0.640 | 0.731 | 0.495 |
+| **hybrid + re-rank** | **0.523** | **0.677** | **0.741** | **0.787** | **0.614** |
 
-Vector wins where it matters most — top-1/top-3 and MRR — meaning the right chunk lands higher
-in the list. Keyword only overtakes at HR@10 (deep in the list). **Vector is used as the default.**
+Baseline for comparison — the Module 4 numbers on the old chapter-sized corpus
+([retrieval_baseline_chapters.md](../eval/results/retrieval_baseline_chapters.md)):
+keyword MRR 0.377, vector MRR 0.413.
 
-### Truncation / chunk-size buckets
+## Module 6: what actually moved the needle
 
-Vector embeds only the first 512 tokens of a chunk. If truncation were the main problem, vector
-should collapse on the `>512` bucket while keyword holds. Instead **both** drop sharply:
+**1. Sub-chunking (modest, and it helped both retrievers).** Module 4 found that chunks over the
+embedding window scored badly — but keyword search, which is never truncated, lost just as much.
+That ruled out truncation as the cause and pointed at chunk *size*: one representation can't
+localize a specific moment in a 15-minute chapter. Splitting chapters into ~350-token overlapping
+windows took the corpus from 5,269 → 27,085 chunks and **0% now exceed the embedding window**
+(was ~93%). Gains were real but modest — keyword MRR 0.377→0.394, vector 0.413→0.428 — which is
+itself the useful finding: chunking was a *precondition*, not the payoff.
 
-| Method | Bucket | n | HR@5 | MRR |
+**2. Hybrid + re-ranking (the payoff).** Fusing keyword and vector with Reciprocal Rank Fusion
+added +0.07 MRR over vector alone, and the cross-encoder re-ranker added another +0.12. The
+re-ranker helps most at the sharp end — **HR@1 jumped 0.387 → 0.523** — because it reads the query
+and chunk *together* rather than comparing pre-computed representations. Sub-chunking is what made
+this affordable: chunks now fit the cross-encoder's window.
+
+**3. Query rewriting made things worse.** Evaluated on a 250-pair subsample
+([retrieval_rewrite.md](../eval/results/retrieval_rewrite.md)):
+
+| Approach | HR@1 | HR@5 | MRR |
+|---|---|---|---|
+| hybrid+rerank | 0.500 | 0.744 | **0.602** |
+| hybrid+rerank+rewrite | 0.396 | 0.624 | 0.491 |
+
+Rewriting *lost* 0.11 MRR. The reason is visible in the rewrites themselves: *"is coffee bad for
+me at night?"* becomes *"effects of nocturnal caffeine consumption on health"* — fluent, but
+**more generic**. It discards the specific details that pinned one chunk, so the query now matches
+many chunks weakly. Evaluation questions are already well-formed and specific, which is precisely
+the case where rewriting has nothing to add and something to lose. It ships implemented but
+**disabled by default** (`rewrite=True` to opt in); it would likely earn its keep on vague or
+multi-turn conversational input, which this eval set doesn't contain.
+
+### Chapter-size buckets
+
+Split by whether the ground-truth chapter actually needed sub-chunking:
+
+| Approach | Bucket | n | HR@5 | MRR |
 |---|---|---|---|---|
-| keyword | ≤512 tok | 45 | 0.689 | 0.559 |
-| keyword | >512 tok | 705 | 0.522 | 0.365 |
-| vector | ≤512 tok | 45 | 0.711 | 0.567 |
-| vector | >512 tok | 705 | 0.531 | 0.403 |
+| keyword | long (2+ sub-chunks) | 730 | 0.496 | 0.390 |
+| vector | long (2+ sub-chunks) | 730 | 0.540 | 0.437 |
+| hybrid | long (2+ sub-chunks) | 730 | 0.643 | 0.498 |
+| hybrid+rerank | long (2+ sub-chunks) | 730 | 0.744 | 0.613 |
 
-Keyword indexes the full text yet still loses ~0.19 MRR on long chunks, so the dominant issue is
-that one coarse representation (one BM25 doc / one 384-d vector) can't pinpoint a specific moment
-in a 10–20-minute chapter. Vector keeps its lead throughout. → **Sub-chunking helps both backends;
-it's the Module 6 priority.** (Only 45/750 pairs fall in the ≤512 bucket, matching the ~93% of the
-corpus that exceeds the limit — see the known-limitation note in [CLAUDE.md](../CLAUDE.md#chunking-strategy).)
+The `long` bucket is 730 of 750 pairs — the population the fix targeted — and it carries the full
+gain. The `short` bucket (n=20, ~4 chapters) is too small to read into; vector scores oddly low
+there, but that's a handful of short intro-style chapters, not a trend.
 
 ## Generation results (LLM-as-judge)
 
@@ -64,27 +101,30 @@ corpus that exceeds the limit — see the known-limitation note in [CLAUDE.md](.
 | basic_rag | 60 | 0.783 | 73.3% | 44 | 6 | 10 |
 | agentic_rag | 60 | **0.800** | 73.3% | 44 | 8 | 8 |
 
-Both label the same 44/60 answers RELEVANT. Agentic's edge is turning **2 complete misses into
-partial answers** — a 0.017 mean-score difference, well within noise for n=60. Since agentic makes
-several API calls per answer (query reformulation + tool loop) for no reliable quality gain,
-**basic RAG stays the default**; agentic remains available via `--agentic` for hard queries.
+Both label the same 44/60 answers RELEVANT; agentic's edge is turning 2 complete misses into
+partial answers — a 0.017 difference, within noise at n=60. Since agentic makes several API calls
+per answer for no reliable gain, **basic RAG stays the default**, with `--agentic` available.
+(These numbers predate the Module 6 retrieval improvements, so they understate current quality.)
 
 ## Decisions applied
 
-- **Vector** is the default retriever ([retrieve.py](../rag/retrieve.py), [rag.py](../rag/rag.py),
-  [cli.py](../rag/cli.py)).
-- **Basic RAG** stays the default generator (cost/latency); `--agentic` opt-in.
-- Sub-chunking is the measured, prioritized fix for Module 6 (best practices).
+- **hybrid + cross-encoder re-rank** is the default retrieval path
+  ([retrieve.py](../rag/retrieve.py), [rag.py](../rag/rag.py), [cli.py](../rag/cli.py)).
+- **Query rewriting off** by default — measured as harmful here.
+- **Basic RAG** the default generator; `--agentic` opt-in.
+- `--retriever keyword|vector|hybrid` and `--no-rerank` remain available to reproduce any row above.
 
 ## Reproduce
 
 ```bash
 uv run eval/generate_ground_truth.py --sample-size 150   # -> eval/ground_truth.jsonl (committed)
-uv run eval/evaluate_retrieval.py                        # -> eval/results/retrieval.{md,json}
-uv run eval/evaluate_llm.py                              # -> eval/results/llm_judge.{md,json}
+uv run eval/evaluate_retrieval.py                        # keyword/vector/hybrid/hybrid+rerank
+uv run eval/evaluate_retrieval.py \
+  --approaches hybrid+rerank,hybrid+rerank+rewrite --limit 250 --out retrieval_rewrite
+uv run eval/evaluate_llm.py                              # LLM-as-judge, basic vs agentic
 uv run eval/test_metrics.py                              # metric unit tests (no pytest needed)
 ```
 
-Cost: ~$1 on `gpt-4o-mini` (ground-truth generation + judging). Query embeddings are local/free.
-The ground-truth set and result files are committed so reviewers can inspect the numbers without
-re-running.
+Cost: ~$1 on `gpt-4o-mini` (ground truth + judging + the rewrite arm). Retrieval, embeddings, and
+re-ranking all run locally and free. Ground truth and result files are committed so reviewers can
+inspect the numbers without re-running.

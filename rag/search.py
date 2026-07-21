@@ -36,6 +36,9 @@ def flatten(doc: Document) -> dict:
         "start_timestamp": meta.get("start_timestamp"),
         "end_timestamp": meta.get("end_timestamp"),
         "upload_date": meta.get("upload_date"),
+        # The pre-sub-chunking chapter id. Carried through so evaluation collected on
+        # chapter-sized chunks still resolves against sub-chunks (see docs/evaluation.md).
+        "parent_chunk_id": meta.get("parent_chunk_id") or "",
     }
 
 
