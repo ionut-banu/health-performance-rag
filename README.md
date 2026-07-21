@@ -31,7 +31,7 @@ Most health advice online is either oversimplified clickbait or buried in hours 
 Requires [`uv`](https://docs.astral.sh/uv/) and an OpenAI API key. Copy `.env.example` to
 `.env` and fill in `OPENAI_API_KEY`.
 
-The knowledge base (`data/documents.jsonl`, 5,269 chunks) is **committed to the repo**, so you
+The knowledge base (`data/documents.jsonl`, 27,085 chunks) is **committed to the repo**, so you
 can query immediately — no transcript re-fetch needed.
 
 ```bash
@@ -114,7 +114,7 @@ addressed (for peer reviewers):
 |---|---|---|
 | Problem description | ✅ | [What is this?](#what-is-this) / [Why this project?](#why-this-project) |
 | Retrieval flow (knowledge base + LLM) | ✅ | [`rag/`](rag/) — retrieve → prompt → LLM (`rag.py`) |
-| Retrieval evaluation (multiple approaches) | ✅ | [docs/evaluation.md](docs/evaluation.md) — keyword vs vector, best (vector) is default |
+| Retrieval evaluation (multiple approaches) | ✅ | [docs/evaluation.md](docs/evaluation.md) — 4 approaches compared; best (hybrid + re-rank) is the default |
 | LLM evaluation (multiple approaches) | ✅ | [docs/evaluation.md](docs/evaluation.md) — basic vs agentic, LLM-as-judge |
 | Ingestion pipeline (automated) | ✅ | [`ingestion/`](ingestion/) Python scripts · [docs/pipeline.md](docs/pipeline.md) |
 | Reproducibility (pinned deps, data accessible) | ✅ | KB committed (`data/documents.jsonl`) · `uv.lock` · [Quickstart](#quickstart) |

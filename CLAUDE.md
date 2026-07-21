@@ -42,7 +42,7 @@ Run in this order. Each step's output feeds the next.
 | `fetch_transcripts.py` | ✅ fixed + resume support | 200/315 Huberman + 28/28 Galpin fetched so far |
 | `normalize.py` | ✅ validated on real data | strips filler by sliding a segment window (not sentence-split — captions have no punctuation); patterns live in `sources.yaml`, not the script |
 | `chunk_by_chapters.py` | ✅ built | chapter-based chunking is primary; token-window (`tiktoken`) fallback for chapter-less episodes |
-| `build_documents.py` | ✅ built + run end-to-end | produced 5269 documents in `data/documents.jsonl` from currently-fetched transcripts |
+| `build_documents.py` | ✅ built + run end-to-end | produced 27,085 sub-chunks in `data/documents.jsonl` from currently-fetched transcripts (was 5,269 before Module 6 sub-chunking) |
 
 ## Next steps (in order)
 
@@ -146,9 +146,9 @@ Every ingested doc must conform to this shape (defined in `schema.py`):
 | Module | Status | What it covers in this repo |
 |---|---|---|
 | 1. Agentic RAG | ✅ built | `rag/` — `minsearch` keyword index + retrieve→prompt→LLM (`rag()`) and agentic function-calling (`agentic_rag()`), OpenAI `gpt-4o-mini` |
-| 2. Vector Search | ✅ built | `rag/vector_search.py` — `sqlitesearch` HNSW index over local `multi-qa-MiniLM-L6-cos-v1` embeddings (`rag/embeddings.py`); `rag/retrieve.py` dispatches keyword-vs-vector via `--retriever`; `rag/compare_retrieval.py` shows the side-by-side. **PGVector deferred to Module 7** (kept infra-free to respect containerization gating). |
+| 2. Vector Search | ✅ built | `rag/vector_search.py` — `sqlitesearch` HNSW index over local `multi-qa-MiniLM-L6-cos-v1` embeddings (`rag/embeddings.py`); `rag/retrieve.py` dispatches the backends via `--retriever` (Module 6 added `hybrid` + re-ranking on top); `rag/compare_retrieval.py` shows the side-by-side. **PGVector deferred to Module 7** (kept infra-free to respect containerization gating). |
 | 3. Orchestration | not started | Wrap ingestion in an Airflow DAG |
-| 4. Evaluation | ✅ built | `eval/` — 750-pair LLM-generated ground truth; retrieval hit-rate/MRR (`evaluate_retrieval.py`) and LLM-as-judge (`evaluate_llm.py`). **Vector beats keyword** (MRR 0.413 vs 0.377) → now the default retriever; basic≈agentic generation (tie) → basic stays default. Report + reproduce steps in `docs/evaluation.md`. |
+| 4. Evaluation | ✅ built | `eval/` — 750-pair LLM-generated ground truth; retrieval hit-rate/MRR (`evaluate_retrieval.py`) and LLM-as-judge (`evaluate_llm.py`). **Vector beat keyword** (MRR 0.413 vs 0.377) → made vector the default at the time, since superseded by Module 6's hybrid+rerank; basic≈agentic generation (tie) → basic is still the default generator. Report + reproduce steps in `docs/evaluation.md`. |
 | 5. Monitoring | not started | Feedback collection + dashboard (5+ charts) |
 | 6. Best Practices | ✅ built | Sub-chunking (`chunk_by_chapters.py`), hybrid RRF (`retrieve.py`), cross-encoder re-ranking (`rag/rerank.py`), query rewriting (`rag/query_rewrite.py`). **Default is now hybrid+rerank** — MRR 0.614 vs 0.413 (+49%). Query rewriting measured as *harmful* here → shipped but off. See `docs/evaluation.md`. |
 | 7. End-to-end | not started | Docker-compose, polished interface |
@@ -173,7 +173,7 @@ against this rubric — it defines what scores full points.
 |---|---|---|
 | Problem description | 2 | Clear problem statement in README |
 | Retrieval flow | 2 | Knowledge base + LLM both used |
-| Retrieval evaluation | 2 | Multiple approaches evaluated — ✅ keyword vs vector (`docs/evaluation.md`) |
+| Retrieval evaluation | 2 | Multiple approaches evaluated — ✅ keyword vs vector vs hybrid vs hybrid+rerank (`docs/evaluation.md`) |
 | LLM evaluation | 2 | Multiple approaches evaluated — ✅ basic vs agentic (LLM-as-judge) |
 | Interface | 2 | UI (Streamlit) or API (FastAPI) |
 | Ingestion pipeline | 2 | Automated (Airflow DAG) |

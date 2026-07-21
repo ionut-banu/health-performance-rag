@@ -16,7 +16,7 @@ flowchart TD
       A["list_all_episodes.py"]
       B["fetch_transcripts.py"]
       C["build_documents.py"]
-      C1["chunk_by_chapters.py<br/>1 chapter = 1 chunk"]
+      C1["chunk_by_chapters.py<br/>chapters, sub-chunked to ~350 tokens"]
       C2["normalize.py<br/>strip filler / sponsor reads"]
       CAT[("data/all_{source}_episodes.json<br/>catalog: title, duration, date, chapters")]
       RAW[("data/raw_transcripts/{source}/*.json<br/>catalog fields + caption segments")]
@@ -28,7 +28,7 @@ flowchart TD
       C --> C1 --> C2 --> DOCS
     end
 
-    DOCS[("data/documents.jsonl<br/>5,269 unified chunks")]
+    DOCS[("data/documents.jsonl<br/>27,085 unified chunks")]
 
     subgraph INDEX["Phase 2 · Indexing"]
       direction TB
@@ -44,18 +44,23 @@ flowchart TD
     subgraph SERVE["Phase 3 · Retrieval & Answer"]
       direction TB
       Q(["user query"])
-      CLI["cli.py<br/>--retriever · --agentic · --source"]
+      CLI["cli.py<br/>--retriever · --no-rerank · --agentic · --source"]
       RAG["rag.py<br/>rag() / agentic_rag()"]
-      RET["retrieve.py<br/>method = keyword / vector"]
+      QR["query_rewrite.py<br/>off by default — measured harmful"]
+      RET["retrieve.py<br/>keyword / vector / hybrid"]
+      RRF["reciprocal_rank_fusion()<br/>fuse both rankings"]
+      RR["rerank.py<br/>cross-encoder reorders top 20"]
       CTX["build_context()<br/>timestamped, citable chunks"]
       LLM["OpenAI gpt-4o-mini"]
       ANS(["grounded answer + citations"])
-      CMP["compare_retrieval.py<br/>keyword vs vector, no LLM"]
+      CMP["compare_retrieval.py<br/>backends side by side, no LLM"]
 
       Q --> CLI --> RAG --> RET
-      K -.->|"keyword path"| RET
-      VDB -.->|"vector path"| RET
-      RET --> CTX --> LLM --> ANS
+      QR -.->|"optional"| RET
+      K -.->|"keyword candidates"| RRF
+      VDB -.->|"vector candidates"| RRF
+      RET --> RRF --> RR
+      RR --> CTX --> LLM --> ANS
       CMP --> RET
     end
 
@@ -82,24 +87,28 @@ Turns YouTube channels into a clean, unified set of text chunks. Run the three s
 
 **Step 3 internals** (per episode, per chunk):
 
-1. [chunk_by_chapters.py](../ingestion/chunk_by_chapters.py) `chunk_transcript()` — slices caption
-   segments into **one chunk per chapter**, attaching `chapter_title` + start/end timestamps.
-   Sponsor/outro chapters are dropped by title pattern (`skip_chapter_patterns` in `sources.yaml`).
-   Token-window chunking is the fallback for chapter-less episodes.
+1. [chunk_by_chapters.py](../ingestion/chunk_by_chapters.py) `chunk_transcript()` — groups caption
+   segments by chapter, then **sub-chunks each chapter into ~350-token overlapping windows**
+   (a whole chapter is too coarse to retrieve well — see [evaluation.md](evaluation.md)). Every
+   sub-chunk keeps its `chapter_title` and gets its own start/end timestamps. Sponsor/outro
+   chapters are dropped by title pattern (`skip_chapter_patterns` in `sources.yaml`). The same
+   windowing helper serves the fallback for chapter-less episodes.
 2. [normalize.py](../ingestion/normalize.py) `normalize()` — strips in-text filler / sponsor reads
    (`filler_text_patterns` in `sources.yaml`) via a sliding segment window. Empty chunks are skipped.
 3. [schema.py](../schema.py) `Document` — each chunk becomes a `Document` with a stable id
-   `{source}_{video_id}_{chapter_index}`; `save_documents()` writes them as JSONL.
+   `{source}_{video_id}_{chapter_index}_{sub_index}`, plus a `parent_chunk_id` naming the chapter
+   it came from (this is what keeps evaluation ground truth valid across re-chunks);
+   `save_documents()` writes them as JSONL.
 
 ## Phase 2 · Indexing
 
-Two independent search backends are built over the **same** `documents.jsonl`, so answers
-can be compared keyword-vs-semantic.
+Two independent search backends are built over the **same** `documents.jsonl`. They're used
+together at query time (hybrid), but each is also selectable alone as a baseline.
 
 | Backend | Built by | Storage | Notes |
 |---|---|---|---|
 | **Keyword** (Module 1) | [search.py](../rag/search.py) `build_index()` | in-memory, rebuilt each process start | `minsearch` TF-IDF over `text`/`title`/`chapter_title` with boosts. Indexes the **full** chunk text. |
-| **Vector** (Module 2) | [build_vector_index.py](../rag/build_vector_index.py) → [embeddings.py](../rag/embeddings.py) → [vector_search.py](../rag/vector_search.py) | `data/vector_index.db`, **persisted** (reopens without re-embedding) | `sqlitesearch` HNSW over local 384-dim embeddings. ⚠️ Truncates chunks at 512 tokens — see the known limitation in [CLAUDE.md](../CLAUDE.md#chunking-strategy). |
+| **Vector** (Module 2) | [build_vector_index.py](../rag/build_vector_index.py) → [embeddings.py](../rag/embeddings.py) → [vector_search.py](../rag/vector_search.py) | `data/vector_index.db`, **persisted** (reopens without re-embedding) | `sqlitesearch` HNSW over local 384-dim embeddings. Since Module 6's sub-chunking, every chunk fits the model's 512-token window — nothing is truncated. |
 
 > Rebuild rule: after `documents.jsonl` changes, the keyword index refreshes automatically
 > (it's in-memory), but the vector `.db` must be rebuilt:
@@ -109,14 +118,16 @@ can be compared keyword-vs-semantic.
 
 | Component | Role |
 |---|---|
-| [cli.py](../rag/cli.py) | Entry point. Flags: `--retriever {keyword,vector}`, `--agentic`, `--source`, `--num-results`. |
+| [cli.py](../rag/cli.py) | Entry point. Flags: `--retriever {keyword,vector,hybrid}`, `--no-rerank`, `--agentic`, `--source`, `--num-results`. |
 | [rag.py](../rag/rag.py) | `rag()` = retrieve → stuff context → one LLM call. `agentic_rag()` = LLM calls `search` as a tool, reformulating queries, until it answers. |
-| [retrieve.py](../rag/retrieve.py) | Backend-agnostic dispatch: `method="keyword"` → `search()`, `method="vector"` → `vector_search()`. Both return the same flattened dict shape, so `rag.py` never touches a backend directly. Lazily builds/opens each index once per process. |
+| [retrieve.py](../rag/retrieve.py) | Backend-agnostic dispatch + the Module 6 stages. `hybrid` (default) fuses keyword and vector rankings with `reciprocal_rank_fusion()`; `rerank=True` (default) then reorders the top candidates. All backends return the same flattened dict shape, so `rag.py` never touches one directly. Indexes are lazily opened once per process. |
+| [rerank.py](../rag/rerank.py) | Cross-encoder second pass — reads query and chunk *together* to score them, far more accurate than comparing pre-computed representations. Runs only over the ~20 retrieved candidates, since it's too slow for the full corpus. Local and free. |
+| [query_rewrite.py](../rag/query_rewrite.py) | Optional LLM rewrite of the query before retrieval. **Off by default** — it measurably lowered accuracy here ([evaluation.md](evaluation.md)). |
 | `build_context()` (in `rag.py`) | Formats retrieved chunks into a citable block with episode title, chapter, and a `&t=<seconds>s` deep link. |
 | OpenAI `gpt-4o-mini` | Answers using **only** the supplied context (system prompt forbids outside knowledge); cites episode + timestamp, or says "I don't know." |
-| [compare_retrieval.py](../rag/compare_retrieval.py) | Diagnostic: runs sample queries through **both** backends and prints top-k side by side (no LLM calls). Seeds the Module 4 eval set. |
+| [compare_retrieval.py](../rag/compare_retrieval.py) | Diagnostic: runs sample queries through the backends and prints top-k side by side (no LLM calls). |
 
-**Query lifecycle:** `query → cli.py → rag.py → retrieve.py → (keyword index | vector index) → build_context() → OpenAI → grounded answer`.
+**Query lifecycle:** `query → cli.py → rag.py → retrieve.py → (keyword + vector) → RRF fusion → cross-encoder re-rank → build_context() → OpenAI → grounded answer`.
 
 ---
 
@@ -130,7 +141,8 @@ can be compared keyword-vs-semantic.
 
 ## Module status (LLM Zoomcamp)
 
-Phases 1–2 and the retrieval/answer loop cover **Modules 1 (Agentic RAG)** and **2 (Vector
-Search)**, both ✅ built. Still ahead: orchestration (Airflow), evaluation (hit-rate/MRR +
-LLM-as-judge), monitoring, hybrid search + reranking, and containerization. See the Build
+The pipeline above covers **Modules 1 (Agentic RAG)**, **2 (Vector Search)**, **4 (Evaluation)**,
+and **6 (Best Practices — sub-chunking, hybrid, re-ranking, query rewriting)**, all ✅ built.
+Still ahead: orchestration (Airflow), monitoring, a UI/API interface, and containerization.
+See the Build
 sequence table in [CLAUDE.md](../CLAUDE.md).
