@@ -23,8 +23,8 @@ Most health advice online is either oversimplified clickbait or buried in hours 
 - **Orchestration:** Apache Airflow
 - **Retrieval:** Hybrid search — keyword (`minsearch`) + vector (`sqlitesearch`, local `sentence-transformers` embeddings) fused with RRF, then cross-encoder re-ranking
 - **Evaluation:** Hit-rate/MRR against an LLM-generated ground-truth set + LLM-as-a-judge
-- **Interface:** *(TBD — Streamlit/FastAPI)*
-- **Monitoring:** *(TBD)*
+- **Interface:** Streamlit web app (chat + citations) and a CLI
+- **Monitoring:** User feedback logged to SQLite + a Streamlit dashboard (7 charts)
 
 ## Quickstart
 
@@ -37,7 +37,9 @@ can query immediately — no transcript re-fetch needed.
 ```bash
 uv sync                            # install pinned dependencies (uv.lock)
 uv run rag/build_vector_index.py   # embed the KB -> data/vector_index.db (first run downloads a ~90MB model)
-uv run rag/cli.py "how do I fall asleep faster?"
+
+uv run streamlit run app/app.py    # web app (recommended) — chat + feedback + dashboard
+uv run rag/cli.py "how do I fall asleep faster?"   # or the CLI
 ```
 
 ### Rebuild the knowledge base from scratch (optional)
@@ -75,6 +77,24 @@ uv run rag/cli.py "how do I fall asleep faster?" --no-rerank          # skip the
 uv run rag/cli.py "compare Huberman and Galpin on caffeine timing" --agentic
 uv run rag/compare_retrieval.py                                       # backends side by side (no LLM)
 ```
+
+## Web app & monitoring
+
+```bash
+uv run streamlit run app/app.py
+```
+
+- **Chat page** — ask a question, get a grounded answer with **clickable citations** that jump
+  to the exact timestamp in the episode. The sidebar exposes every retrieval approach
+  (keyword / vector / hybrid, re-ranking, agentic mode); defaults are the measured winners.
+- **Feedback** — 👍 / 👎 on each answer. Every interaction (question, answer, sources, config,
+  latency, vote) is logged to `data/feedback.db`.
+- **📊 Dashboard page** — 7 charts over that log: questions per day, feedback breakdown,
+  positive rate over time, answer latency, most-cited episodes, retrieval config mix, and
+  citations by podcast source — plus headline metrics.
+
+> The dashboard reflects **real usage only** — no synthetic data is seeded. It starts empty;
+> ask a few questions and vote to populate it.
 
 ## Evaluation (Module 4)
 
@@ -118,8 +138,8 @@ addressed (for peer reviewers):
 | LLM evaluation (multiple approaches) | ✅ | [docs/evaluation.md](docs/evaluation.md) — basic vs agentic, LLM-as-judge |
 | Ingestion pipeline (automated) | ✅ | [`ingestion/`](ingestion/) Python scripts · [docs/pipeline.md](docs/pipeline.md) |
 | Reproducibility (pinned deps, data accessible) | ✅ | KB committed (`data/documents.jsonl`) · `uv.lock` · [Quickstart](#quickstart) |
-| Interface | 🚧 1/2 | CLI ([`rag/cli.py`](rag/cli.py)); UI/API planned (Module 7) |
-| Monitoring | ⬜ | planned (Module 5) |
+| Interface | ✅ | Streamlit web app ([`app/app.py`](app/app.py)) + CLI ([`rag/cli.py`](rag/cli.py)) |
+| Monitoring | ✅ | 👍/👎 feedback + 7-chart dashboard ([`app/pages/1_Dashboard.py`](app/pages/1_Dashboard.py)) |
 | Containerization | ⬜ | planned (Module 7 — docker-compose) |
 | Hybrid search (bonus) | ✅ | RRF in [`rag/retrieve.py`](rag/retrieve.py) — the default |
 | Document re-ranking (bonus) | ✅ | cross-encoder [`rag/rerank.py`](rag/rerank.py) — biggest single gain |

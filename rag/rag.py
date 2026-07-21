@@ -53,15 +53,20 @@ def build_context(chunks: list[dict]) -> str:
     return "\n\n---\n\n".join(blocks)
 
 
-def rag(
+def rag_with_sources(
     query: str,
     num_results: int = 5,
     source: str | None = None,
     method: str = "hybrid",  # Module 6 eval winner (see docs/evaluation.md)
     rerank: bool = True,
     rewrite: bool = False,
-) -> str:
-    """Basic RAG: retrieve, stuff context into the prompt, answer in one call."""
+) -> tuple[str, list[dict]]:
+    """
+    Basic RAG, returning both the answer and the chunks it was grounded in.
+
+    The UI renders those chunks as clickable citations and logs them for the monitoring
+    dashboard; `rag()` below wraps this for callers that only want the answer text.
+    """
     chunks = retrieve(
         query,
         num_results=num_results,
@@ -80,7 +85,27 @@ def rag(
             {"role": "user", "content": user_prompt},
         ],
     )
-    return resp.choices[0].message.content
+    return resp.choices[0].message.content, chunks
+
+
+def rag(
+    query: str,
+    num_results: int = 5,
+    source: str | None = None,
+    method: str = "hybrid",
+    rerank: bool = True,
+    rewrite: bool = False,
+) -> str:
+    """Basic RAG: retrieve, stuff context into the prompt, answer in one call."""
+    answer, _ = rag_with_sources(
+        query,
+        num_results=num_results,
+        source=source,
+        method=method,
+        rerank=rerank,
+        rewrite=rewrite,
+    )
+    return answer
 
 
 # --- Agentic RAG: the LLM calls `search` as a tool -------------------------
@@ -115,7 +140,8 @@ SEARCH_TOOL = {
 
 def _run_search_tool(
     args: dict, method: str = "hybrid", rerank: bool = True, rewrite: bool = False
-) -> list[dict]:
+) -> tuple[list[dict], list[dict]]:
+    """Returns (payload for the model, raw chunks) — the raw chunks feed UI citations."""
     chunks = retrieve(
         args["query"],
         num_results=args.get("num_results", 5),
@@ -124,8 +150,8 @@ def _run_search_tool(
         rerank=rerank,
         rewrite=rewrite,
     )
-    # Return only the fields the model needs to answer + cite.
-    return [
+    # Send the model only the fields it needs to answer + cite.
+    payload = [
         {
             "title": c["title"],
             "chapter_title": c.get("chapter_title") or "",
@@ -134,20 +160,27 @@ def _run_search_tool(
         }
         for c in chunks
     ]
+    return payload, chunks
 
 
-def agentic_rag(
+def agentic_rag_with_sources(
     query: str,
     verbose: bool = False,
     method: str = "hybrid",
     rerank: bool = True,
     rewrite: bool = False,
-) -> str:
-    """Agentic RAG: the model decides when/what to search via function calling."""
+) -> tuple[str, list[dict]]:
+    """
+    Agentic RAG returning the answer plus every chunk retrieved across all tool calls.
+
+    The model may search several times with reformulated queries, so sources accumulate
+    across iterations; duplicates (the same chunk found by two searches) are dropped.
+    """
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": query},
     ]
+    collected: dict[str, dict] = {}   # chunk id -> chunk, preserving first-seen order
 
     for _ in range(MAX_AGENT_ITERATIONS):
         resp = _client.chat.completions.create(
@@ -158,7 +191,7 @@ def agentic_rag(
         message = resp.choices[0].message
 
         if not message.tool_calls:
-            return message.content
+            return message.content, list(collected.values())
 
         # Append the assistant turn (with its tool calls) before the results.
         messages.append(message)
@@ -166,15 +199,33 @@ def agentic_rag(
             args = json.loads(call.function.arguments)
             if verbose:
                 print(f"  [tool call] search({args})")
-            results = _run_search_tool(args, method=method, rerank=rerank, rewrite=rewrite)
+            payload, chunks = _run_search_tool(
+                args, method=method, rerank=rerank, rewrite=rewrite
+            )
+            for c in chunks:
+                collected.setdefault(c["id"], c)
             messages.append(
                 {
                     "role": "tool",
                     "tool_call_id": call.id,
-                    "content": json.dumps(results, ensure_ascii=False),
+                    "content": json.dumps(payload, ensure_ascii=False),
                 }
             )
 
     # Hit the iteration cap — make one final call without tools to force an answer.
     resp = _client.chat.completions.create(model=MODEL, messages=messages)
-    return resp.choices[0].message.content
+    return resp.choices[0].message.content, list(collected.values())
+
+
+def agentic_rag(
+    query: str,
+    verbose: bool = False,
+    method: str = "hybrid",
+    rerank: bool = True,
+    rewrite: bool = False,
+) -> str:
+    """Agentic RAG: the model decides when/what to search via function calling."""
+    answer, _ = agentic_rag_with_sources(
+        query, verbose=verbose, method=method, rerank=rerank, rewrite=rewrite
+    )
+    return answer

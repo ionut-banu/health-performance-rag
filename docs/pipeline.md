@@ -44,8 +44,9 @@ flowchart TD
     subgraph SERVE["Phase 3 · Retrieval & Answer"]
       direction TB
       Q(["user query"])
+      UI["app/app.py<br/>Streamlit chat + 👍/👎"]
       CLI["cli.py<br/>--retriever · --no-rerank · --agentic · --source"]
-      RAG["rag.py<br/>rag() / agentic_rag()"]
+      RAG["rag.py<br/>rag_with_sources() / agentic_rag_with_sources()"]
       QR["query_rewrite.py<br/>off by default — measured harmful"]
       RET["retrieve.py<br/>keyword / vector / hybrid"]
       RRF["reciprocal_rank_fusion()<br/>fuse both rankings"]
@@ -55,12 +56,20 @@ flowchart TD
       ANS(["grounded answer + citations"])
       CMP["compare_retrieval.py<br/>backends side by side, no LLM"]
 
-      Q --> CLI --> RAG --> RET
+      FB[("data/feedback.db<br/>interactions + 👍/👎 votes")]
+      DASH["app/pages/1_Dashboard.py<br/>7 monitoring charts"]
+
+      Q --> UI --> RAG
+      Q --> CLI --> RAG
+      RAG --> RET
       QR -.->|"optional"| RET
       K -.->|"keyword candidates"| RRF
       VDB -.->|"vector candidates"| RRF
       RET --> RRF --> RR
       RR --> CTX --> LLM --> ANS
+      ANS --> UI
+      UI -->|"logs question, answer,<br/>sources, latency, vote"| FB
+      FB --> DASH
       CMP --> RET
     end
 
@@ -118,7 +127,10 @@ together at query time (hybrid), but each is also selectable alone as a baseline
 
 | Component | Role |
 |---|---|
-| [cli.py](../rag/cli.py) | Entry point. Flags: `--retriever {keyword,vector,hybrid}`, `--no-rerank`, `--agentic`, `--source`, `--num-results`. |
+| [app/app.py](../app/app.py) | Streamlit chat UI — the primary interface. Renders the answer with clickable timestamp citations, exposes every retrieval approach in the sidebar (defaults = the eval winners), and collects 👍/👎. Heavy singletons sit behind `@st.cache_resource`, since Streamlit re-runs the script on every interaction. |
+| [app/feedback.py](../app/feedback.py) | Logs each interaction (question, answer, sources, config, latency, vote) to `data/feedback.db` (SQLite). |
+| [app/pages/1_Dashboard.py](../app/pages/1_Dashboard.py) | Monitoring dashboard — 7 charts over the interaction log. Reflects real usage only; never seeded. |
+| [cli.py](../rag/cli.py) | Alternative entry point. Flags: `--retriever {keyword,vector,hybrid}`, `--no-rerank`, `--agentic`, `--source`, `--num-results`. |
 | [rag.py](../rag/rag.py) | `rag()` = retrieve → stuff context → one LLM call. `agentic_rag()` = LLM calls `search` as a tool, reformulating queries, until it answers. |
 | [retrieve.py](../rag/retrieve.py) | Backend-agnostic dispatch + the Module 6 stages. `hybrid` (default) fuses keyword and vector rankings with `reciprocal_rank_fusion()`; `rerank=True` (default) then reorders the top candidates. All backends return the same flattened dict shape, so `rag.py` never touches one directly. Indexes are lazily opened once per process. |
 | [rerank.py](../rag/rerank.py) | Cross-encoder second pass — reads query and chunk *together* to score them, far more accurate than comparing pre-computed representations. Runs only over the ~20 retrieved candidates, since it's too slow for the full corpus. Local and free. |
@@ -142,7 +154,8 @@ together at query time (hybrid), but each is also selectable alone as a baseline
 ## Module status (LLM Zoomcamp)
 
 The pipeline above covers **Modules 1 (Agentic RAG)**, **2 (Vector Search)**, **4 (Evaluation)**,
-and **6 (Best Practices — sub-chunking, hybrid, re-ranking, query rewriting)**, all ✅ built.
-Still ahead: orchestration (Airflow), monitoring, a UI/API interface, and containerization.
-See the Build
+**5 (Monitoring)**, **6 (Best Practices — sub-chunking, hybrid, re-ranking, query rewriting)**,
+and the interface half of **7**, all ✅ built. Still ahead: containerization (docker-compose) and
+optionally orchestration (Airflow — earns no additional rubric points, since ingestion already
+scores full marks as automated Python scripts). See the Build
 sequence table in [CLAUDE.md](../CLAUDE.md).
