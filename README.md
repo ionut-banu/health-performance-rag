@@ -26,6 +26,33 @@ Most health advice online is either oversimplified clickbait or buried in hours 
 - **Interface:** *(TBD — Streamlit/FastAPI)*
 - **Monitoring:** *(TBD)*
 
+## Quickstart
+
+Requires [`uv`](https://docs.astral.sh/uv/) and an OpenAI API key. Copy `.env.example` to
+`.env` and fill in `OPENAI_API_KEY`.
+
+The knowledge base (`data/documents.jsonl`, 5,269 chunks) is **committed to the repo**, so you
+can query immediately — no transcript re-fetch needed.
+
+```bash
+uv sync                            # install pinned dependencies (uv.lock)
+uv run rag/build_vector_index.py   # embed the KB -> data/vector_index.db (first run downloads a ~90MB model)
+uv run rag/cli.py "how do I fall asleep faster?"
+```
+
+### Rebuild the knowledge base from scratch (optional)
+
+Only needed to refresh transcripts or add sources. Run per source, in order — each step is
+resumable and feeds the next; see [docs/pipeline.md](docs/pipeline.md) for what each does and how
+they link.
+
+```bash
+uv run ingestion/list_all_episodes.py --source huberman   # catalog episodes  -> data/all_huberman_episodes.json
+uv run ingestion/fetch_transcripts.py --source huberman   # pull transcripts  -> data/raw_transcripts/huberman/
+uv run ingestion/build_documents.py                       # chunk + normalize -> data/documents.jsonl
+uv run rag/build_vector_index.py                          # re-embed the rebuilt KB
+```
+
 ## Retrieval (Modules 1–2)
 
 Two retrieval backends run over the same `data/documents.jsonl` knowledge base, so
@@ -37,19 +64,10 @@ answers can be compared keyword-vs-semantic:
   Module 4 retrieval eval.
 
 ```bash
-uv sync
-
-# Build the vector index once (embeds all chunks -> data/vector_index.db).
-# First run downloads the embedding model (~90MB) to the Hugging Face cache.
-uv run rag/build_vector_index.py
-
-# Ask a question (needs OPENAI_API_KEY in .env; see .env.example). Vector is the default.
-uv run rag/cli.py "how do I fall asleep faster?"
-uv run rag/cli.py "how do I fall asleep faster?" --retriever keyword   # keyword baseline
+uv run rag/cli.py "how do I fall asleep faster?"                      # vector (default)
+uv run rag/cli.py "how do I fall asleep faster?" --retriever keyword  # keyword baseline
 uv run rag/cli.py "compare Huberman and Galpin on caffeine timing" --agentic
-
-# Eyeball keyword vs vector retrieval side by side (no LLM calls).
-uv run rag/compare_retrieval.py
+uv run rag/compare_retrieval.py                                       # keyword vs vector, side by side (no LLM)
 ```
 
 ## Evaluation (Module 4)
@@ -70,6 +88,24 @@ uv run eval/generate_ground_truth.py --sample-size 150   # -> eval/ground_truth.
 uv run eval/evaluate_retrieval.py                        # -> eval/results/retrieval.md
 uv run eval/evaluate_llm.py                              # -> eval/results/llm_judge.md
 ```
+
+## Evaluation criteria map
+
+Where each [project rubric](docs/project-guidelines.md#evaluation-criteria) criterion is
+addressed (for peer reviewers):
+
+| Criterion | Status | Where |
+|---|---|---|
+| Problem description | ✅ | [What is this?](#what-is-this) / [Why this project?](#why-this-project) |
+| Retrieval flow (knowledge base + LLM) | ✅ | [`rag/`](rag/) — retrieve → prompt → LLM (`rag.py`) |
+| Retrieval evaluation (multiple approaches) | ✅ | [docs/evaluation.md](docs/evaluation.md) — keyword vs vector, best (vector) is default |
+| LLM evaluation (multiple approaches) | ✅ | [docs/evaluation.md](docs/evaluation.md) — basic vs agentic, LLM-as-judge |
+| Ingestion pipeline (automated) | ✅ | [`ingestion/`](ingestion/) Python scripts · [docs/pipeline.md](docs/pipeline.md) |
+| Reproducibility (pinned deps, data accessible) | ✅ | KB committed (`data/documents.jsonl`) · `uv.lock` · [Quickstart](#quickstart) |
+| Interface | 🚧 1/2 | CLI ([`rag/cli.py`](rag/cli.py)); UI/API planned (Module 7) |
+| Monitoring | ⬜ | planned (Module 5) |
+| Containerization | ⬜ | planned (Module 7 — docker-compose) |
+| Hybrid search · re-ranking · query rewriting (bonus) | ⬜ | planned (Module 6) |
 
 ## Status
 
