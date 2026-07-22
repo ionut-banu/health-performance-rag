@@ -31,9 +31,19 @@ Most health advice online is either oversimplified clickbait or buried in hours 
 
 ## Quickstart
 
-Copy `.env.example` to `.env` and fill in `OPENAI_API_KEY`. The knowledge base
-(`data/documents.jsonl`, 35,035 chunks) is **committed to the repo**, so there's no transcript
-re-fetch either way.
+> ### ✅ Ingestion is already done — there is nothing to download
+>
+> The knowledge base (`data/documents.jsonl`, **35,035 chunks from 337 episodes**) is **built
+> and committed to this repo**. Cloning gets you the finished dataset.
+>
+> **Do not run the ingestion scripts.** They were already run to produce that file. Re-running
+> them means fetching 337 episode transcripts from YouTube, which takes hours and gets your IP
+> rate-limited. They're documented further down purely as evidence of how the data was built.
+>
+> **To run this project you need exactly two things:** an OpenAI API key, and one command below.
+
+Copy `.env.example` to `.env` and fill in `OPENAI_API_KEY`. Then pick either option — both serve
+the same app.
 
 ### Option A — Docker (everything, no local setup)
 
@@ -64,18 +74,31 @@ Both paths run identical retrieval code — `PGVECTOR_URL` (set by compose) is w
 Postgres backend. Retrieval quality is equivalent; see [docs/evaluation.md](docs/evaluation.md)
 for the head-to-head.
 
-### Rebuild the knowledge base from scratch (optional)
+## Ingestion pipeline (already run)
 
-Only needed to refresh transcripts or add sources. Run per source, in order — each step is
-resumable and feeds the next; see [docs/pipeline.md](docs/pipeline.md) for what each does and how
-they link.
+> ⚠️ **You do not need to run any of this.** These scripts were already run; their output is the
+> committed `data/documents.jsonl` that the app loads. Re-running fetches 337 transcripts from
+> YouTube — hours of work, and YouTube will rate-limit and IP-block you partway through. Run it
+> only if you want to refresh the corpus or add a new source.
+
+The knowledge base is produced by three automated, resumable Python scripts, run in order per
+source. Each step's output feeds the next — see [docs/pipeline.md](docs/pipeline.md) for the full
+diagram and what each stage does.
 
 ```bash
 uv run ingestion/list_all_episodes.py --source huberman   # catalog episodes  -> data/all_huberman_episodes.json
 uv run ingestion/fetch_transcripts.py --source huberman   # pull transcripts  -> data/raw_transcripts/huberman/
 uv run ingestion/build_documents.py                       # chunk + normalize -> data/documents.jsonl
-uv run rag/build_vector_index.py                          # re-embed the rebuilt KB
 ```
+
+Notable properties: every step is **resumable** (interrupted runs skip completed work),
+`fetch_transcripts.py` handles YouTube rate limiting with exponential backoff and stops cleanly
+when persistently blocked, and videos that genuinely have no transcript are recorded so they
+aren't retried forever. Channel URLs and filters live in
+[ingestion/sources.yaml](ingestion/sources.yaml) — adding a source needs no code changes.
+
+**Current corpus:** 308/318 Huberman + 29/29 Galpin episodes (the 10 missing have no transcript
+available on YouTube) → 35,035 chunks.
 
 ## Retrieval
 
@@ -161,8 +184,8 @@ addressed (for peer reviewers):
 | Retrieval flow (knowledge base + LLM) | ✅ | [`rag/`](rag/) — retrieve → prompt → LLM (`rag.py`) |
 | Retrieval evaluation (multiple approaches) | ✅ | [docs/evaluation.md](docs/evaluation.md) — 4 approaches compared; best (hybrid + re-rank) is the default |
 | LLM evaluation (multiple approaches) | ✅ | [docs/evaluation.md](docs/evaluation.md) — basic vs agentic, LLM-as-judge |
-| Ingestion pipeline (automated) | ✅ | [`ingestion/`](ingestion/) Python scripts · [docs/pipeline.md](docs/pipeline.md) |
-| Reproducibility (pinned deps, data accessible) | ✅ | KB committed (`data/documents.jsonl`) · `uv.lock` · [Quickstart](#quickstart) |
+| Ingestion pipeline (automated) | ✅ | [`ingestion/`](ingestion/) — 3 automated resumable scripts, **already run**; output committed as `data/documents.jsonl` so no fetching is required. [Details](#ingestion-pipeline-already-run) · [docs/pipeline.md](docs/pipeline.md) |
+| Reproducibility (pinned deps, data accessible) | ✅ | Dataset ships in-repo (35,035 chunks) — clone and run, no ingestion needed · `uv.lock` pins every version · [Quickstart](#quickstart) |
 | Interface | ✅ | Streamlit web app ([`app/app.py`](app/app.py)) + CLI ([`rag/cli.py`](rag/cli.py)) |
 | Monitoring | ✅ | 👍/👎 feedback + 7-chart dashboard ([`app/pages/1_Dashboard.py`](app/pages/1_Dashboard.py)) |
 | Containerization | ✅ | [`docker-compose.yml`](docker-compose.yml) — app + Postgres/pgvector, one command |

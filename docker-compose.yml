@@ -50,23 +50,6 @@ services:
       - appstate:/app/state
     restart: unless-stopped
 
-  # Opt-in: `docker compose --profile ingest run --rm ingest` to rebuild the knowledge base.
-  # Kept out of the default `up` because fetching transcripts is long-running and rate-limited.
-  ingest:
-    build: .
-    profiles: ["ingest"]
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      PGVECTOR_URL: postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-ragpass}@db:5432/${POSTGRES_DB:-rag}
-    env_file:
-      - .env
-    volumes:
-      - appstate:/app/state
-    entrypoint: ["python"]
-    command: ["ingestion/build_documents.py"]
-
 volumes:
   pgdata:
   appstate:
