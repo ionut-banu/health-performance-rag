@@ -38,22 +38,26 @@ Run in this order. Each step's output feeds the next.
 
 | Script | Status | Notes |
 |---|---|---|
-| `list_all_episodes.py` | ✅ validated on real data | 315 Huberman episodes, chapters confirmed populated |
-| `fetch_transcripts.py` | ✅ fixed + resume support | 200/315 Huberman + 28/28 Galpin fetched so far |
+| `list_all_episodes.py` | ✅ validated on real data | 318 Huberman + 29 Galpin episodes cataloged, chapters confirmed populated |
+| `fetch_transcripts.py` | ✅ complete | 308/318 Huberman + 29/29 Galpin. The 10 missing are recorded in `data/fetch_failures_huberman.json` as `NoTranscriptFound` — those videos genuinely have none. Retries/backoff handle YouTube rate limiting; see the module docstring. |
 | `normalize.py` | ✅ validated on real data | strips filler by sliding a segment window (not sentence-split — captions have no punctuation); patterns live in `sources.yaml`, not the script |
 | `chunk_by_chapters.py` | ✅ built | chapter-based chunking is primary; token-window (`tiktoken`) fallback for chapter-less episodes |
-| `build_documents.py` | ✅ built + run end-to-end | produced 27,085 sub-chunks in `data/documents.jsonl` from currently-fetched transcripts (was 5,269 before Module 6 sub-chunking) |
+| `build_documents.py` | ✅ built + run end-to-end | produced **35,035** sub-chunks in `data/documents.jsonl` across 337 episodes |
 
-## Next steps (in order)
+## Next steps
 
-1. Run `fetch_transcripts.py --source huberman` to completion (200/315 fetched so far),
-   then re-run `build_documents.py` to pick up the rest. After any change to
-   `data/documents.jsonl`, rebuild the vector index too: `rm data/vector_index.db &&
-   uv run rag/build_vector_index.py` (the keyword `minsearch` index rebuilds in-memory
-   on each run, but the vector `.db` is persisted and won't refresh on its own).
-2. Modules 1 (Agentic RAG) and 2 (Vector Search) are ✅ built. Next unbuilt module in the
-   Build sequence below is Module 3 (Airflow orchestration) or Module 4 (Evaluation —
-   now has two retrieval approaches, keyword + vector, to score against a ground-truth set).
+All core rubric criteria are built (see the Build sequence below). What's left is optional:
+
+1. **Screenshots** for the README — the rubric guidelines ask for them, and the monitoring
+   dashboard needs real usage before it's worth capturing. Never seed synthetic feedback.
+2. **Cloud deployment** (+2 bonus) and **Airflow** (Module 3 — earns 0 rubric points, since
+   ingestion already scores full marks as automated Python scripts).
+
+**After any change to `data/documents.jsonl`, rebuild both indexes:**
+`rm data/vector_index.db && uv run rag/build_vector_index.py` for local, and restart the
+container for pgvector (the build is resumable and inserts only missing chunks). The keyword
+`minsearch` index rebuilds in memory on each run, so it needs nothing. Then re-run
+`eval/evaluate_retrieval.py` to confirm no regression.
 
 ## Chunking strategy
 
@@ -62,12 +66,12 @@ Chapters are confirmed populated on both Huberman Lab and Galpin episodes.
 
 - Chapters are the semantic unit, but a chapter is **sub-chunked** into ~350-token
   (`MAX_CHUNK_TOKENS`, cl100k) overlapping windows — a whole chapter is far too coarse to
-  retrieve well (see the Module 6 note below). Each sub-chunk keeps its parent
+  retrieve well (see the note below). Each sub-chunk keeps its parent
   `chapter_title` and gets its own `start_timestamp` / `end_timestamp`.
-- Every chunk carries **`parent_chunk_id`** = the id its chapter would have had before
-  sub-chunking (`{source}_{video_id}_{chapter_index}`). This is load-bearing: it's what keeps
-  the Module 4 evaluation ground truth valid across the re-chunk. Don't break this scheme
-  without regenerating `eval/ground_truth.jsonl`.
+- Every chunk carries **`parent_chunk_id`** = the id of the chapter it came from
+  (`{source}_{video_id}_{chapter_index}`). It's provenance only — the evaluation matches chunk
+  ids exactly and no longer depends on it. (It was once a compatibility shim so chapter-level
+  ground truth survived sub-chunking; that ground truth has since been regenerated.)
 - **Skip sponsor/outro chapters** by title pattern — patterns live in `sources.yaml` per
   source (`skip_chapter_patterns`), not hardcoded in the script.
 - `chunk_episode` and the no-chapter fallback `chunk_by_tokens` share one windowing helper
@@ -87,8 +91,8 @@ Chapters are confirmed populated on both Huberman Lab and Galpin episodes.
 > *never* truncated — lost just as much accuracy on those chunks, which ruled out truncation as
 > the root cause and identified **chunk size** instead: one representation can't localize a
 > specific moment in a 15-minute chapter.
-> Sub-chunking took the corpus from 5,269 → **27,085** chunks with **0% over the window**, and
-> unblocked cross-encoder re-ranking (chunks now fit its input). Full numbers:
+> Sub-chunking fixed it: every chunk now fits the window, which also unblocked cross-encoder
+> re-ranking (chunks fit its input too). Current corpus: **35,035** chunks. Full numbers:
 > `docs/evaluation.md`.
 > **After any change to chunking:** re-run `build_documents.py`, then
 > `rm data/vector_index.db && uv run rag/build_vector_index.py`, then `eval/evaluate_retrieval.py`
@@ -117,7 +121,7 @@ Every ingested doc must conform to this shape (defined in `schema.py`):
                                       # sub-chunking id; keeps eval ground truth valid
     "chapter_index": int,             # position among surviving chapters
     "sub_index": int,                 # window position within the chapter
-    # recipe chunks (not yet implemented):
+    # recipe chunks (scoped out — see Data sources):
     # "ingredients": list,
     # "macros": dict,
   }
@@ -148,10 +152,10 @@ Every ingested doc must conform to this shape (defined in `schema.py`):
 | 1. Agentic RAG | ✅ built | `rag/` — `minsearch` keyword index + retrieve→prompt→LLM (`rag()`) and agentic function-calling (`agentic_rag()`), OpenAI `gpt-4o-mini` |
 | 2. Vector Search | ✅ built | `rag/vector_search.py` — `sqlitesearch` HNSW index over local `multi-qa-MiniLM-L6-cos-v1` embeddings (`rag/embeddings.py`); `rag/retrieve.py` dispatches the backends via `--retriever` (Module 6 added `hybrid` + re-ranking on top); `rag/compare_retrieval.py` shows the side-by-side. PGVector landed in Module 7 as the containerized backend; sqlitesearch remains the infra-free local default. |
 | 3. Orchestration | not started | Wrap ingestion in an Airflow DAG |
-| 4. Evaluation | ✅ built | `eval/` — 750-pair LLM-generated ground truth; retrieval hit-rate/MRR (`evaluate_retrieval.py`) and LLM-as-judge (`evaluate_llm.py`). **Vector beat keyword** (MRR 0.413 vs 0.377) → made vector the default at the time, since superseded by Module 6's hybrid+rerank; basic≈agentic generation (tie) → basic is still the default generator. Report + reproduce steps in `docs/evaluation.md`. |
+| 4. Evaluation | ✅ built | `eval/` — 750-pair LLM-generated ground truth; retrieval hit-rate/MRR (`evaluate_retrieval.py`) and LLM-as-judge (`evaluate_llm.py`). Ground truth is **sub-chunk level** with exact id matching — retrieving a neighbouring passage is a miss. **Don't hard-code result figures anywhere but `docs/evaluation.md`**; they change whenever the corpus or ground truth is regenerated. |
 | 5. Monitoring | ✅ built | `app/feedback.py` logs every interaction (question, answer, sources, config, latency, vote) to `data/feedback.db`; `app/pages/1_Dashboard.py` charts it (7 charts). **Never seed synthetic rows** — the dashboard is evidence of real usage. |
-| 6. Best Practices | ✅ built | Sub-chunking (`chunk_by_chapters.py`), hybrid RRF (`retrieve.py`), cross-encoder re-ranking (`rag/rerank.py`), query rewriting (`rag/query_rewrite.py`). **Default is now hybrid+rerank** — MRR 0.614 vs 0.413 (+49%). Query rewriting measured as *harmful* here → shipped but off. See `docs/evaluation.md`. |
-| 7. End-to-end | ✅ built | Streamlit app (`app/app.py`) + `docker-compose.yml` (app + Postgres/pgvector, one command). **PGVector migration done** — `rag/pgvector_search.py`; `PGVECTOR_URL` selects it, otherwise `sqlitesearch` (so the eval harness and CLI still run infra-free). Verified no regression: MRR 0.6257 vs 0.6135, keyword control identical. |
+| 6. Best Practices | ✅ built | Sub-chunking (`chunk_by_chapters.py`), hybrid RRF (`retrieve.py`), cross-encoder re-ranking (`rag/rerank.py`), query rewriting (`rag/query_rewrite.py`). **Default is hybrid+rerank**, the measured winner. Query rewriting measured as *harmful* → shipped but off by default. See `docs/evaluation.md`. |
+| 7. End-to-end | ✅ built | Streamlit app (`app/app.py`) + `docker-compose.yml` (app + Postgres/pgvector, one command). **PGVector migration done** — `rag/pgvector_search.py`; `PGVECTOR_URL` selects it, otherwise `sqlitesearch` (so the eval harness and CLI still run infra-free). Migration verified against the same ground truth with keyword as a control (it must be identical, since it never touches the vector store). |
 
 When asked to build a feature, check this table first — don't jump ahead to a module's
 techniques before its row is in progress (e.g. no reranking code before Module 6).

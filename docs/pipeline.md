@@ -28,7 +28,7 @@ flowchart TD
       C --> C1 --> C2 --> DOCS
     end
 
-    DOCS[("data/documents.jsonl<br/>27,085 unified chunks")]
+    DOCS[("data/documents.jsonl<br/>35,035 unified chunks")]
 
     subgraph INDEX["Phase 2 · Indexing"]
       direction TB

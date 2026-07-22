@@ -1,150 +1,129 @@
 # Evaluation
 
-Every retrieval and generation choice in this project is measured against a fixed
-ground-truth set, and the winner is wired in as the default. This is the evidence for the
-rubric's *"multiple approaches are evaluated, and the best one is used."*
+Every retrieval and generation choice in this project is measured against a fixed ground-truth
+set, and the winner is wired in as the default. This is the evidence for the rubric's
+*"multiple approaches are evaluated, and the best one is used."*
+
+All numbers below come from the **current** corpus (35,035 chunks, 337 episodes) and the
+**current** ground truth. Result files under [eval/results/](../eval/results/) are regenerated
+by the commands at the bottom.
 
 ## Summary
 
 | Axis | Approaches compared | Winner | Default? |
 |---|---|---|---|
-| Retrieval | keyword · vector · hybrid · hybrid+rerank | **hybrid + cross-encoder re-rank** (MRR 0.614 on SQLite, 0.626 on pgvector) | ✅ yes |
-| Vector store | sqlitesearch vs Postgres/pgvector | pgvector, marginally (no regression) | ✅ in Docker |
-| Query rewriting | with vs without | **without** — rewriting measurably *hurt* | ✅ off |
-| Generation | basic `rag()` vs `agentic_rag()` | tie (0.783 vs 0.800) | basic (cost/latency) |
-
-**Headline:** retrieval MRR went **0.413 → 0.614 (+49%)** and HR@1 **0.316 → 0.523 (+65%)**
-across Modules 4→6, measured on the *same* 750 pairs.
+| Retrieval | keyword · vector · hybrid · hybrid+rerank | **hybrid + cross-encoder re-rank** | ✅ yes |
+| Query rewriting | with vs without | **without** — rewriting measurably hurts | ✅ off |
+| Generation | basic `rag()` vs `agentic_rag()` | **basic** — better *and* cheaper | ✅ yes |
+| Vector store | sqlitesearch vs Postgres/pgvector | pgvector by a hair; equivalent in practice | pgvector in Docker |
 
 ## Methodology
 
 - **Ground truth** ([eval/ground_truth.jsonl](../eval/ground_truth.jsonl)) — 750
-  `question → chunk_id` pairs. For 150 chunks (stratified by source) the LLM wrote ~5 realistic
-  user questions each, phrased *not* to quote the transcript so keyword search can't win on
-  lexical overlap. Script: [generate_ground_truth.py](../eval/generate_ground_truth.py).
-- **Retrieval** — retrieve top-10 per approach; a "hit" means the source chunk appears.
-  Report **hit-rate@k** and **MRR** ([metrics.py](../eval/metrics.py), unit-tested).
-  Script: [evaluate_retrieval.py](../eval/evaluate_retrieval.py).
-- **Comparability across the Module 6 re-chunk** — sub-chunking renumbers documents, which would
-  normally invalidate the ground truth. Each sub-chunk therefore records a `parent_chunk_id`
-  equal to the id its chapter had *before* splitting, and the hit test accepts either id. The
-  same 750 pairs score both corpora, so before/after numbers are directly comparable.
-- **Generation** — LLM-as-judge: `gpt-4o-mini` grades each answer against the reference chunk as
-  RELEVANT (1.0) / PARTLY (0.5) / NON (0.0), on a 60-question sample.
+  `question → chunk_id` pairs. For 150 chunks (stratified by source) `gpt-4o-mini` wrote 5
+  realistic user questions each, phrased *not* to quote the transcript so keyword search can't
+  win on lexical overlap. Script: [generate_ground_truth.py](../eval/generate_ground_truth.py).
+- **Strict matching.** Each question targets one specific ~350-token passage, and a hit requires
+  that exact chunk id. Retrieving a neighbouring passage from the same chapter is a **miss**.
+  This is deliberately harsh: it measures whether we find *the answer*, not merely the right
+  neighbourhood.
+- **Metrics** — hit-rate@k and MRR ([metrics.py](../eval/metrics.py), unit-tested in
+  [test_metrics.py](../eval/test_metrics.py)).
+- **Generation** — LLM-as-judge: `gpt-4o-mini` grades each answer against the reference passage
+  as RELEVANT (1.0) / PARTLY (0.5) / NON (0.0), over 60 questions.
   Script: [evaluate_llm.py](../eval/evaluate_llm.py).
 
-## Retrieval results
+> **Two guardrails**, both added after they caught real errors:
+> - Approach definitions pin every flag explicitly rather than inheriting `retrieve()`'s
+>   defaults. Those defaults track whichever config currently wins, so an approach that omitted
+>   `rerank` silently changed meaning when the production default flipped — producing
+>   plausible-looking but incomparable numbers.
+> - The LLM scripts print and record the model and endpoint they actually used. A stray
+>   `OPENAI_BASE_URL`/`OPENAI_API_KEY` in the shell overrides `.env` and silently redirects
+>   judging to a different model.
+>
+> Failed calls are also excluded from scores rather than counted as bad answers, and reported
+> in an `errors` column — an infrastructure failure is not evidence that an answer was poor.
 
-Current corpus: 27,085 sub-chunks (see [Module 6](#module-6-what-actually-moved-the-needle)).
+## Retrieval
+
+Local `sqlitesearch` backend, all 750 pairs:
 
 | Approach | HR@1 | HR@3 | HR@5 | HR@10 | MRR |
 |---|---|---|---|---|---|
-| keyword | 0.308 | 0.444 | 0.499 | 0.601 | 0.394 |
-| vector | 0.356 | 0.469 | 0.529 | 0.599 | 0.428 |
-| hybrid (RRF) | 0.387 | 0.571 | 0.640 | 0.731 | 0.495 |
-| **hybrid + re-rank** | **0.523** | **0.677** | **0.741** | **0.787** | **0.614** |
+| keyword | 0.172 | 0.317 | 0.384 | 0.465 | 0.261 |
+| vector | 0.184 | 0.316 | 0.375 | 0.441 | 0.263 |
+| hybrid (RRF) | 0.224 | 0.396 | 0.483 | 0.575 | 0.331 |
+| **hybrid + re-rank** | **0.331** | **0.508** | **0.555** | **0.612** | **0.429** |
 
-Baseline for comparison — the Module 4 numbers on the old chapter-sized corpus
-([retrieval_baseline_chapters.md](../eval/results/retrieval_baseline_chapters.md)):
-keyword MRR 0.377, vector MRR 0.413.
+Three things stand out:
 
-## Module 6: what actually moved the needle
+1. **Keyword and vector are near-identical alone** (0.261 vs 0.263). Semantic search is good at
+   landing in the right topical neighbourhood, but pinpointing one specific passage is hard for
+   both. Under a looser, chapter-level bar vector looked clearly better; strict matching removes
+   that advantage.
+2. **Hybrid beats both** (+26% MRR over vector) precisely *because* they're comparably strong
+   but fail differently — exactly the condition under which rank fusion pays off.
+3. **Re-ranking is the single biggest lever** (+30% MRR over hybrid, and HR@1 0.224 → 0.331).
+   The cross-encoder reads query and passage *together* instead of comparing pre-computed
+   representations. It only reorders the ~20 retrieved candidates, so it cannot rescue a passage
+   the first stage missed — which is why the two stages are complementary rather than redundant.
 
-**1. Sub-chunking (modest, and it helped both retrievers).** Module 4 found that chunks over the
-embedding window scored badly — but keyword search, which is never truncated, lost just as much.
-That ruled out truncation as the cause and pointed at chunk *size*: one representation can't
-localize a specific moment in a 15-minute chapter. Splitting chapters into ~350-token overlapping
-windows took the corpus from 5,269 → 27,085 chunks and **0% now exceed the embedding window**
-(was ~93%). Gains were real but modest — keyword MRR 0.377→0.394, vector 0.413→0.428 — which is
-itself the useful finding: chunking was a *precondition*, not the payoff.
+### Vector store: sqlitesearch vs pgvector
 
-**2. Hybrid + re-ranking (the payoff).** Fusing keyword and vector with Reciprocal Rank Fusion
-added +0.07 MRR over vector alone, and the cross-encoder re-ranker added another +0.12. The
-re-ranker helps most at the sharp end — **HR@1 jumped 0.387 → 0.523** — because it reads the query
-and chunk *together* rather than comparing pre-computed representations. Sub-chunking is what made
-this affordable: chunks now fit the cross-encoder's window.
+| Approach | MRR (sqlitesearch) | MRR (pgvector) |
+|---|---|---|
+| keyword | 0.2608 | 0.2608 |
+| vector | 0.2626 | 0.2873 |
+| hybrid | 0.3308 | 0.3471 |
+| **hybrid+rerank** | 0.4286 | **0.4393** |
 
-**3. Query rewriting made things worse.** Evaluated on a 250-pair subsample
-([retrieval_rewrite.md](../eval/results/retrieval_rewrite.md)):
+pgvector is marginally ahead; the two paths are equivalent for practical purposes.
+
+**The keyword row is the control.** Keyword search is `minsearch` and never touches the vector
+store, so it *must* be unchanged — and it is, to four decimals. If the harness had drifted, that
+row would have moved. (It's how an earlier faulty run was caught: keyword "improved" when only
+the vector backend had changed, which is impossible.)
+
+### Query rewriting
+
+250-pair subsample ([retrieval_rewrite.md](../eval/results/retrieval_rewrite.md)):
 
 | Approach | HR@1 | HR@5 | MRR |
 |---|---|---|---|
-| hybrid+rerank | 0.500 | 0.744 | **0.602** |
-| hybrid+rerank+rewrite | 0.396 | 0.624 | 0.491 |
+| hybrid+rerank | 0.336 | 0.556 | **0.434** |
+| hybrid+rerank+rewrite | 0.276 | 0.484 | 0.360 |
 
-Rewriting *lost* 0.11 MRR. The reason is visible in the rewrites themselves: *"is coffee bad for
-me at night?"* becomes *"effects of nocturnal caffeine consumption on health"* — fluent, but
-**more generic**. It discards the specific details that pinned one chunk, so the query now matches
-many chunks weakly. Evaluation questions are already well-formed and specific, which is precisely
-the case where rewriting has nothing to add and something to lose. It ships implemented but
-**disabled by default** (`rewrite=True` to opt in); it would likely earn its keep on vague or
-multi-turn conversational input, which this eval set doesn't contain.
+Rewriting **costs 0.07 MRR**. The reason is visible in the rewrites themselves: *"is coffee bad
+for me at night?"* becomes *"effects of nocturnal caffeine consumption on health"* — fluent, but
+**more generic**. It discards the specifics that pin one passage. Evaluation questions are
+already well-formed, which is exactly the case where rewriting has nothing to add and something
+to lose. It ships implemented but **disabled** (`rewrite=True` to opt in); it would likely earn
+its keep on vague or multi-turn conversational input, which this eval set doesn't contain.
 
-### Chapter-size buckets
+## Generation (LLM-as-judge)
 
-Split by whether the ground-truth chapter actually needed sub-chunking:
+60 questions, `gpt-4o-mini` judge, on the winning retriever, 0 errors:
 
-| Approach | Bucket | n | HR@5 | MRR |
-|---|---|---|---|---|
-| keyword | long (2+ sub-chunks) | 730 | 0.496 | 0.390 |
-| vector | long (2+ sub-chunks) | 730 | 0.540 | 0.437 |
-| hybrid | long (2+ sub-chunks) | 730 | 0.643 | 0.498 |
-| hybrid+rerank | long (2+ sub-chunks) | 730 | 0.744 | 0.613 |
+| Approach | n | errors | Mean score | % RELEVANT | RELEVANT | PARTLY | NON |
+|---|---|---|---|---|---|---|---|
+| **basic_rag** | 60 | 0 | **0.867** | **80.0%** | 48 | 8 | 4 |
+| agentic_rag | 60 | 0 | 0.800 | 70.0% | 42 | 12 | 6 |
 
-The `long` bucket is 730 of 750 pairs — the population the fix targeted — and it carries the full
-gain. The `short` bucket (n=20, ~4 chapters) is too small to read into; vector scores oddly low
-there, but that's a handful of short intro-style chapters, not a trend.
-
-## Module 7: does moving to Postgres + pgvector regress retrieval?
-
-Containerization swapped the vector store from `sqlitesearch` to Postgres + pgvector (HNSW,
-cosine). Because that changes the approximate-nearest-neighbour implementation, it can't be
-assumed safe — so the **same 750 pairs** were re-run against the containerized index
-([retrieval_pgvector.md](../eval/results/retrieval_pgvector.md)):
-
-| Approach | MRR (sqlitesearch) | MRR (pgvector) | Δ |
-|---|---|---|---|
-| keyword | 0.3936 | 0.3936 | **0.0000** |
-| vector | 0.4284 | 0.4914 | +0.0630 |
-| hybrid | 0.4948 | 0.5147 | +0.0199 |
-| **hybrid+rerank** | 0.6135 | **0.6257** | +0.0122 |
-
-No regression — pgvector is slightly *better*, mostly on pure vector search, and
-`hybrid+rerank` remains the winner.
-
-**The keyword row is the control.** Keyword search is `minsearch` and never touches the vector
-store, so it must be unchanged — and it is, to four decimals. That's what makes the rest of the
-comparison believable: if the harness had drifted, this row would have moved.
-
-> ⚠️ **Methodology bug worth recording.** The first pgvector run reported large gains across the
-> board, including keyword "improving" from 0.394 to 0.550 — impossible, since the vector backend
-> can't affect keyword-only retrieval. The cause: `ALL_APPROACHES` specified only `method` and let
-> `rerank` fall through to `retrieve()`'s default, which had been flipped to `True` when the
-> Module 6 winner was wired in. Every approach was silently re-ranked, so "hybrid" and
-> "hybrid+rerank" were literally the same run. Evaluation definitions now pin every flag
-> explicitly — they must never inherit production defaults, because those defaults intentionally
-> track whatever currently wins, which silently makes old and new runs incomparable while still
-> producing plausible-looking numbers.
-
-## Generation results (LLM-as-judge)
-
-| Approach | n | Mean score | % RELEVANT | RELEVANT | PARTLY | NON |
-|---|---|---|---|---|---|---|
-| basic_rag | 60 | 0.783 | 73.3% | 44 | 6 | 10 |
-| agentic_rag | 60 | **0.800** | 73.3% | 44 | 8 | 8 |
-
-Both label the same 44/60 answers RELEVANT; agentic's edge is turning 2 complete misses into
-partial answers — a 0.017 difference, within noise at n=60. Since agentic makes several API calls
-per answer for no reliable gain, **basic RAG stays the default**, with `--agentic` available.
-(These numbers predate the Module 6 retrieval improvements, so they understate current quality.)
+**Basic RAG wins outright** — it is both better and several times cheaper, since agentic makes
+multiple API calls per answer. A plausible reading: once retrieval is strong enough that a
+single well-targeted query surfaces the right passage, the agentic loop's reformulations mostly
+add marginal chunks that dilute the context. Treat the margin as suggestive rather than decisive
+(6 labels out of 60); what it firmly establishes is that agentic is *not* better, which settles
+the default given the cost difference.
 
 ## Decisions applied
 
 - **hybrid + cross-encoder re-rank** is the default retrieval path
   ([retrieve.py](../rag/retrieve.py), [rag.py](../rag/rag.py), [cli.py](../rag/cli.py)).
 - **Query rewriting off** by default — measured as harmful here.
-- **Basic RAG** the default generator; `--agentic` opt-in.
-- `--retriever keyword|vector|hybrid` and `--no-rerank` remain available to reproduce any row above.
+- **Basic RAG** is the default generator; `--agentic` remains available.
+- `--retriever keyword|vector|hybrid` and `--no-rerank` reproduce any row above.
 
 ## Reproduce
 
@@ -153,10 +132,18 @@ uv run eval/generate_ground_truth.py --sample-size 150   # -> eval/ground_truth.
 uv run eval/evaluate_retrieval.py                        # keyword/vector/hybrid/hybrid+rerank
 uv run eval/evaluate_retrieval.py \
   --approaches hybrid+rerank,hybrid+rerank+rewrite --limit 250 --out retrieval_rewrite
-uv run eval/evaluate_llm.py                              # LLM-as-judge, basic vs agentic
+uv run eval/evaluate_llm.py --sample-size 60             # LLM-as-judge, basic vs agentic
 uv run eval/test_metrics.py                              # metric unit tests (no pytest needed)
+
+# Against the containerized pgvector index instead of the local one:
+PGVECTOR_URL=postgresql://rag:ragpass@127.0.0.1:5432/rag \
+  uv run eval/evaluate_retrieval.py --out retrieval_pgvector
 ```
 
-Cost: ~$1 on `gpt-4o-mini` (ground truth + judging + the rewrite arm). Retrieval, embeddings, and
+Cost: ~$1 on `gpt-4o-mini` (ground truth + judging + the rewrite arm). Retrieval, embeddings and
 re-ranking all run locally and free. Ground truth and result files are committed so reviewers can
 inspect the numbers without re-running.
+
+> Absolute numbers are only comparable within a single corpus + ground-truth generation. Both
+> were regenerated when the transcript set was completed, so figures here supersede any earlier
+> ones — do not compare across regenerations, and don't copy figures into other files.

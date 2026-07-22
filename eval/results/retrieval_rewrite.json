@@ -1,0 +1,27 @@
+{
+  "ground_truth_pairs": 250,
+  "embedding_model": "multi-qa-MiniLM-L6-cos-v1",
+  "approaches": [
+    "hybrid+rerank",
+    "hybrid+rerank+rewrite"
+  ],
+  "overall": {
+    "hybrid+rerank": {
+      "hr@1": 0.336,
+      "hr@3": 0.508,
+      "hr@5": 0.556,
+      "hr@10": 0.616,
+      "mrr": 0.4341,
+      "n": 250
+    },
+    "hybrid+rerank+rewrite": {
+      "hr@1": 0.276,
+      "hr@3": 0.424,
+      "hr@5": 0.484,
+      "hr@10": 0.528,
+      "mrr": 0.3598,
+      "n": 250
+    }
+  },
+  "winner_by_mrr": "hybrid+rerank"
+}
