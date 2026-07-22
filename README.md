@@ -32,7 +32,7 @@ Most health advice online is either oversimplified clickbait or buried in hours 
 ## Quickstart
 
 Copy `.env.example` to `.env` and fill in `OPENAI_API_KEY`. The knowledge base
-(`data/documents.jsonl`, 27,085 chunks) is **committed to the repo**, so there's no transcript
+(`data/documents.jsonl`, 35,035 chunks) is **committed to the repo**, so there's no transcript
 re-fetch either way.
 
 ### Option A — Docker (everything, no local setup)
@@ -42,7 +42,7 @@ docker compose up --build
 # then open http://localhost:8501
 ```
 
-Brings up Postgres + pgvector and the Streamlit app. The **first** start embeds all 27,085
+Brings up Postgres + pgvector and the Streamlit app. The **first** start embeds all 35,035
 chunks into the database — CPU-bound, so allow ~15–20 minutes; progress is logged. The database
 lives in a named volume, so every later `docker compose up` starts in seconds. The build is
 resumable: if it's interrupted, the next start continues from where it stopped.
@@ -83,18 +83,18 @@ The knowledge base is chunked into ~350-token overlapping windows within each ch
 queried through a pipeline whose every stage was chosen by measurement:
 
 1. **Keyword** — in-memory `minsearch` TF-IDF index.
-2. **Vector** — on-disk `sqlitesearch` HNSW index over local `multi-qa-MiniLM-L6-cos-v1`
-   embeddings (384-dim, free/offline).
+2. **Vector** — HNSW index over local `multi-qa-MiniLM-L6-cos-v1` embeddings (384-dim,
+   free/offline); pgvector in Docker, `sqlitesearch` locally.
 3. **Hybrid** — the two fused with Reciprocal Rank Fusion.
 4. **Re-ranking** — a local cross-encoder reorders the fused candidates.
 
 **Hybrid + re-ranking is the default**, and it roughly doubles top-1 accuracy versus the
-keyword baseline (HR@1 0.31 → 0.52). Query rewriting is implemented but **off by default** —
+keyword baseline (HR@1 0.17 → 0.33). Query rewriting is implemented but **off by default** —
 it measurably hurt (see [docs/evaluation.md](docs/evaluation.md)).
 
 ```bash
 uv run rag/cli.py "how do I fall asleep faster?"                      # hybrid + rerank (default)
-uv run rag/cli.py "how do I fall asleep faster?" --retriever keyword  # Module 1 baseline
+uv run rag/cli.py "how do I fall asleep faster?" --retriever keyword  # keyword baseline
 uv run rag/cli.py "how do I fall asleep faster?" --no-rerank          # skip the cross-encoder
 uv run rag/cli.py "compare Huberman and Galpin on caffeine timing" --agentic
 uv run rag/compare_retrieval.py                                       # backends side by side (no LLM)
@@ -118,28 +118,31 @@ uv run streamlit run app/app.py
 > The dashboard reflects **real usage only** — no synthetic data is seeded. It starts empty;
 > ask a few questions and vote to populate it.
 
-## Evaluation (Module 4)
+## Evaluation
 
 Both retrieval and answer generation are evaluated against a 750-pair, LLM-generated
 ground-truth set, and the winners are wired in as defaults. Full report + reproduce steps:
 [docs/evaluation.md](docs/evaluation.md).
 
-- **Retrieval** (hit-rate / MRR) — measured across four approaches; **hybrid + cross-encoder
-  re-ranking wins** and is the default:
+- **Retrieval** (hit-rate / MRR) — four approaches over the full 35,035-chunk corpus;
+  **hybrid + cross-encoder re-ranking wins** and is the default:
 
   | Approach | HR@1 | HR@5 | MRR |
   |---|---|---|---|
-  | keyword | 0.308 | 0.499 | 0.394 |
-  | vector | 0.356 | 0.529 | 0.428 |
-  | hybrid | 0.387 | 0.640 | 0.495 |
-  | **hybrid + re-rank** | **0.523** | **0.741** | **0.614** |
+  | keyword | 0.172 | 0.384 | 0.261 |
+  | vector | 0.184 | 0.375 | 0.263 |
+  | hybrid | 0.224 | 0.483 | 0.331 |
+  | **hybrid + re-rank** | **0.331** | **0.555** | **0.429** |
 
-- **Generation** (LLM-as-judge) — basic RAG ≈ agentic (0.783 vs 0.800, a tie); basic stays
-  default for cost/latency, `--agentic` available.
-- **Query rewriting** — implemented and evaluated, but it *lowered* MRR (0.491 vs 0.602), so it
-  ships disabled. The eval questions are already specific, and rewriting made them generic.
-- **Progress** — retrieval MRR improved **+49%** (0.413 → 0.614) from Modules 4→6, measured on
-  the same 750 pairs.
+  Ground truth targets one specific ~350-token passage and matching is exact, so retrieving a
+  neighbouring passage from the same chapter counts as a miss — a deliberately strict bar.
+
+- **Generation** (LLM-as-judge) — **basic RAG wins**, 0.867 vs 0.800 for agentic (80% vs 70%
+  answers rated relevant). Basic is the default; `--agentic` remains available.
+- **Query rewriting** — implemented and evaluated, but it *lowers* accuracy, so it ships
+  disabled: the eval questions are already specific and rewriting makes them generic.
+- **Vector store** — pgvector (Docker) and sqlitesearch (local) score within noise of each
+  other, so both paths are equivalent in quality.
 
 ```bash
 uv run eval/generate_ground_truth.py --sample-size 150   # -> eval/ground_truth.jsonl
