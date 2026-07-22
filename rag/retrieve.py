@@ -6,11 +6,17 @@ RAG loops in rag.py stay backend-agnostic. Adding hybrid search in Module 6 mean
 adding one more branch here, not touching rag.py.
 
   method="keyword"  Module 1: minsearch TF-IDF index (in-memory).
-  method="vector"   Module 2: sqlitesearch HNSW index over local embeddings (on-disk).
+  method="vector"   Module 2: HNSW index over local embeddings.
   method="hybrid"   Module 6: both, fused with Reciprocal Rank Fusion.
+
+The vector backend is chosen at runtime: Postgres + pgvector when PGVECTOR_URL is set
+(docker-compose sets it), otherwise the infra-free on-disk sqlitesearch index. Both return
+the same flattened dict shape, so nothing downstream — including the evaluation harness —
+cares which one is active.
 """
 from search import build_index, search
 from vector_search import load_vector_index, vector_search
+from pgvector_search import pg_vector_search, pgvector_url
 
 # RRF constant. Fusing by rank (not score) sidesteps the fact that TF-IDF scores and
 # cosine similarities live on incomparable scales; 60 is the value from the original
@@ -36,6 +42,18 @@ def get_vector_index():
     return _vector_index
 
 
+def warm_indexes() -> None:
+    """
+    Prime only the indexes this process will actually use.
+
+    Important for the container: with pgvector active, touching get_vector_index() would
+    build the unused on-disk sqlitesearch index — several minutes of pointless work.
+    """
+    get_keyword_index()
+    if not pgvector_url():
+        get_vector_index()
+
+
 def reciprocal_rank_fusion(result_lists: list[list[dict]], num_results: int) -> list[dict]:
     """
     Fuse ranked result lists by Reciprocal Rank Fusion: each doc scores sum(1/(RRF_K + rank))
@@ -52,16 +70,23 @@ def reciprocal_rank_fusion(result_lists: list[list[dict]], num_results: int) -> 
     return [docs[k] for k in ranked[:num_results]]
 
 
+def _vector(query: str, num_results: int, source: str | None) -> list[dict]:
+    """Vector search via whichever backend is configured (pgvector if PGVECTOR_URL is set)."""
+    if pgvector_url():
+        return pg_vector_search(query, num_results=num_results, source=source)
+    return vector_search(get_vector_index(), query, num_results=num_results, source=source)
+
+
 def _dispatch(query: str, num_results: int, source: str | None, method: str, candidates: int):
     if method == "keyword":
         return search(get_keyword_index(), query, num_results=num_results, source=source)
     if method == "vector":
-        return vector_search(get_vector_index(), query, num_results=num_results, source=source)
+        return _vector(query, num_results, source)
     if method == "hybrid":
         return reciprocal_rank_fusion(
             [
                 search(get_keyword_index(), query, num_results=candidates, source=source),
-                vector_search(get_vector_index(), query, num_results=candidates, source=source),
+                _vector(query, candidates, source),
             ],
             num_results=num_results,
         )

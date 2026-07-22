@@ -33,12 +33,15 @@ flowchart TD
     subgraph INDEX["Phase 2 · Indexing"]
       direction TB
       K["search.py · build_index()<br/>minsearch TF-IDF · in-memory"]
-      V["build_vector_index.py"]
+      V["build_vector_index.py / pgvector_search.py"]
       EMB["embeddings.py<br/>multi-qa-MiniLM-L6 · 384-dim"]
-      VDB[("data/vector_index.db<br/>sqlitesearch HNSW · persisted")]
+      VDB[("data/vector_index.db<br/>sqlitesearch HNSW · local default")]
+      PG[("Postgres + pgvector<br/>HNSW · used when PGVECTOR_URL set")]
 
       DOCS --> K
-      DOCS --> V --> EMB --> VDB
+      DOCS --> V --> EMB
+      EMB --> VDB
+      EMB --> PG
     end
 
     subgraph SERVE["Phase 3 · Retrieval & Answer"]
@@ -65,6 +68,7 @@ flowchart TD
       QR -.->|"optional"| RET
       K -.->|"keyword candidates"| RRF
       VDB -.->|"vector candidates"| RRF
+      PG -.->|"vector candidates"| RRF
       RET --> RRF --> RR
       RR --> CTX --> LLM --> ANS
       ANS --> UI

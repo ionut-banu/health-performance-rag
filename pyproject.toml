@@ -8,12 +8,30 @@ dependencies = [
     "minsearch>=0.0.4",
     "numpy>=2.5.1",
     "openai>=1.0.0",
+    "pgvector>=0.5.0",
+    "psycopg[binary]>=3.3.4",
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0.3",
     "sentence-transformers>=5.6.0",
     "sqlitesearch>=0.1.2",
     "streamlit>=1.59.2",
     "tiktoken>=0.8.0",
+    # Transitive via sentence-transformers, but declared explicitly because
+    # [tool.uv.sources] below only applies to direct dependencies — without this the
+    # CPU-only pin is silently ignored and Linux images pull ~3.5GB of CUDA runtime.
+    "torch>=2.13.0",
     "youtube-transcript-api>=1.2.4",
     "yt-dlp>=2026.6.9",
 ]
+
+# On Linux (i.e. the Docker image), PyPI's torch wheel drags in the CUDA runtime —
+# nvidia-* and triton added ~3.5GB to the image for a GPU that containers here will never
+# have. Routing torch to PyTorch's CPU index cuts that out. Scoped to Linux with a marker so
+# macOS keeps resolving torch from PyPI as before, where it's already CPU/MPS-only.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]

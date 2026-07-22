@@ -23,13 +23,20 @@ def get_model() -> SentenceTransformer:
     return _model
 
 
-def embed_texts(texts: list[str], batch_size: int = 64) -> np.ndarray:
-    """Embed a list of texts -> (len(texts), EMBEDDING_DIM) float32 array."""
+def embed_texts(
+    texts: list[str], batch_size: int = 64, show_progress: bool = True
+) -> np.ndarray:
+    """
+    Embed a list of texts -> (len(texts), EMBEDDING_DIM) float32 array.
+
+    `show_progress` drives tqdm, which is useful in a terminal but renders as unreadable
+    carriage-return spam in container logs — callers that print their own progress pass False.
+    """
     return get_model().encode(
         texts,
         batch_size=batch_size,
         normalize_embeddings=True,
-        show_progress_bar=True,
+        show_progress_bar=show_progress,
         convert_to_numpy=True,
     )
 

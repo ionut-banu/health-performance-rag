@@ -4,7 +4,7 @@ Persistent context for Claude Code sessions in this repo. Read this before makin
 
 ## Project
 
-RAG application answering health/performance/nutrition questions, grounded in podcast transcripts and recipe data — final project for DataTalks.Club's LLM Zoomcamp. Built incrementally, module-by-module, alongside the course (not end-to-end upfront).
+RAG application answering health/performance/nutrition questions, grounded in podcast transcripts — final project for DataTalks.Club's LLM Zoomcamp. Built incrementally, module-by-module, alongside the course (not end-to-end upfront). Recipe data was **scoped out** (2026-07-22); the knowledge base is transcripts only.
 
 ## Dependency management
 
@@ -24,7 +24,7 @@ All three sources are wired into the pipeline. Channel config (URLs, filter defa
 |---|---|---|
 | Huberman Lab (YouTube) | pipeline ready | `ingestion/sources.yaml` → `huberman` |
 | Andy Galpin — Perform (YouTube) | pipeline ready | `ingestion/sources.yaml` → `galpin` |
-| RecipeNLG + USDA FoodData Central | not started | add after transcript pipeline is validated end-to-end |
+| RecipeNLG + USDA FoodData Central | **scoped out** | Deliberately dropped — don't add without asking. The `"recipe"` values in `schema.py`'s Literals are harmless leftovers. |
 
 ## Ingestion pipeline — step order and status
 
@@ -146,12 +146,12 @@ Every ingested doc must conform to this shape (defined in `schema.py`):
 | Module | Status | What it covers in this repo |
 |---|---|---|
 | 1. Agentic RAG | ✅ built | `rag/` — `minsearch` keyword index + retrieve→prompt→LLM (`rag()`) and agentic function-calling (`agentic_rag()`), OpenAI `gpt-4o-mini` |
-| 2. Vector Search | ✅ built | `rag/vector_search.py` — `sqlitesearch` HNSW index over local `multi-qa-MiniLM-L6-cos-v1` embeddings (`rag/embeddings.py`); `rag/retrieve.py` dispatches the backends via `--retriever` (Module 6 added `hybrid` + re-ranking on top); `rag/compare_retrieval.py` shows the side-by-side. **PGVector deferred to Module 7** (kept infra-free to respect containerization gating). |
+| 2. Vector Search | ✅ built | `rag/vector_search.py` — `sqlitesearch` HNSW index over local `multi-qa-MiniLM-L6-cos-v1` embeddings (`rag/embeddings.py`); `rag/retrieve.py` dispatches the backends via `--retriever` (Module 6 added `hybrid` + re-ranking on top); `rag/compare_retrieval.py` shows the side-by-side. PGVector landed in Module 7 as the containerized backend; sqlitesearch remains the infra-free local default. |
 | 3. Orchestration | not started | Wrap ingestion in an Airflow DAG |
 | 4. Evaluation | ✅ built | `eval/` — 750-pair LLM-generated ground truth; retrieval hit-rate/MRR (`evaluate_retrieval.py`) and LLM-as-judge (`evaluate_llm.py`). **Vector beat keyword** (MRR 0.413 vs 0.377) → made vector the default at the time, since superseded by Module 6's hybrid+rerank; basic≈agentic generation (tie) → basic is still the default generator. Report + reproduce steps in `docs/evaluation.md`. |
 | 5. Monitoring | ✅ built | `app/feedback.py` logs every interaction (question, answer, sources, config, latency, vote) to `data/feedback.db`; `app/pages/1_Dashboard.py` charts it (7 charts). **Never seed synthetic rows** — the dashboard is evidence of real usage. |
 | 6. Best Practices | ✅ built | Sub-chunking (`chunk_by_chapters.py`), hybrid RRF (`retrieve.py`), cross-encoder re-ranking (`rag/rerank.py`), query rewriting (`rag/query_rewrite.py`). **Default is now hybrid+rerank** — MRR 0.614 vs 0.413 (+49%). Query rewriting measured as *harmful* here → shipped but off. See `docs/evaluation.md`. |
-| 7. End-to-end | partially built | **Interface ✅** — Streamlit app (`app/app.py`), sidebar exposes every retrieval approach with the eval winners as defaults. **Docker-compose still to do.** |
+| 7. End-to-end | ✅ built | Streamlit app (`app/app.py`) + `docker-compose.yml` (app + Postgres/pgvector, one command). **PGVector migration done** — `rag/pgvector_search.py`; `PGVECTOR_URL` selects it, otherwise `sqlitesearch` (so the eval harness and CLI still run infra-free). Verified no regression: MRR 0.6257 vs 0.6135, keyword control identical. |
 
 When asked to build a feature, check this table first — don't jump ahead to a module's
 techniques before its row is in progress (e.g. no reranking code before Module 6).
@@ -178,7 +178,7 @@ against this rubric — it defines what scores full points.
 | Interface | 2 | UI (Streamlit) or API (FastAPI) — ✅ `app/app.py` |
 | Ingestion pipeline | 2 | Automated (Airflow DAG) |
 | Monitoring | 2 | User feedback + dashboard (5+ charts) — ✅ 👍/👎 + 7 charts |
-| Containerization | 2 | Full docker-compose |
+| Containerization | 2 | Full docker-compose — ✅ app + Postgres/pgvector |
 | Reproducibility | 2 | Clear instructions, pinned deps, data accessible |
 | Hybrid search | 1 | Vector + keyword combined (bonus) — ✅ RRF, and it's the default |
 | Document re-ranking | 1 | Bonus — ✅ cross-encoder, biggest single gain (HR@1 +0.14) |

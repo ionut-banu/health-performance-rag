@@ -8,7 +8,8 @@ rubric's *"multiple approaches are evaluated, and the best one is used."*
 
 | Axis | Approaches compared | Winner | Default? |
 |---|---|---|---|
-| Retrieval | keyword · vector · hybrid · hybrid+rerank | **hybrid + cross-encoder re-rank** (MRR 0.614) | ✅ yes |
+| Retrieval | keyword · vector · hybrid · hybrid+rerank | **hybrid + cross-encoder re-rank** (MRR 0.614 on SQLite, 0.626 on pgvector) | ✅ yes |
+| Vector store | sqlitesearch vs Postgres/pgvector | pgvector, marginally (no regression) | ✅ in Docker |
 | Query rewriting | with vs without | **without** — rewriting measurably *hurt* | ✅ off |
 | Generation | basic `rag()` vs `agentic_rag()` | tie (0.783 vs 0.800) | basic (cost/latency) |
 
@@ -93,6 +94,37 @@ Split by whether the ground-truth chapter actually needed sub-chunking:
 The `long` bucket is 730 of 750 pairs — the population the fix targeted — and it carries the full
 gain. The `short` bucket (n=20, ~4 chapters) is too small to read into; vector scores oddly low
 there, but that's a handful of short intro-style chapters, not a trend.
+
+## Module 7: does moving to Postgres + pgvector regress retrieval?
+
+Containerization swapped the vector store from `sqlitesearch` to Postgres + pgvector (HNSW,
+cosine). Because that changes the approximate-nearest-neighbour implementation, it can't be
+assumed safe — so the **same 750 pairs** were re-run against the containerized index
+([retrieval_pgvector.md](../eval/results/retrieval_pgvector.md)):
+
+| Approach | MRR (sqlitesearch) | MRR (pgvector) | Δ |
+|---|---|---|---|
+| keyword | 0.3936 | 0.3936 | **0.0000** |
+| vector | 0.4284 | 0.4914 | +0.0630 |
+| hybrid | 0.4948 | 0.5147 | +0.0199 |
+| **hybrid+rerank** | 0.6135 | **0.6257** | +0.0122 |
+
+No regression — pgvector is slightly *better*, mostly on pure vector search, and
+`hybrid+rerank` remains the winner.
+
+**The keyword row is the control.** Keyword search is `minsearch` and never touches the vector
+store, so it must be unchanged — and it is, to four decimals. That's what makes the rest of the
+comparison believable: if the harness had drifted, this row would have moved.
+
+> ⚠️ **Methodology bug worth recording.** The first pgvector run reported large gains across the
+> board, including keyword "improving" from 0.394 to 0.550 — impossible, since the vector backend
+> can't affect keyword-only retrieval. The cause: `ALL_APPROACHES` specified only `method` and let
+> `rerank` fall through to `retrieve()`'s default, which had been flipped to `True` when the
+> Module 6 winner was wired in. Every approach was silently re-ranked, so "hybrid" and
+> "hybrid+rerank" were literally the same run. Evaluation definitions now pin every flag
+> explicitly — they must never inherit production defaults, because those defaults intentionally
+> track whatever currently wins, which silently makes old and new runs incomparable while still
+> producing plausible-looking numbers.
 
 ## Generation results (LLM-as-judge)
 

@@ -1,46 +1,68 @@
 # Health & Performance RAG Assistant
 
-> Ask science-backed questions about health, performance, and nutrition — answers grounded in Huberman Lab, Andy Galpin's *Perform* podcast, and real recipe data.
+> Ask science-backed questions about health, performance, and nutrition — answers grounded in Huberman Lab and Andy Galpin's *Perform* podcast transcripts, with citations you can jump to.
 
 ## What is this?
 
-This is a Retrieval-Augmented Generation (RAG) application that lets you query evidence-based health and performance content using natural language. Instead of guessing what science says about sleep, recovery, or nutrition, you get answers grounded in actual transcripts from two leading sources — Andrew Huberman's neuroscience-focused podcast and Andy Galpin's performance science podcast — paired with real recipe and nutrition data so recommendations are actionable, not just theoretical.
+This is a Retrieval-Augmented Generation (RAG) application that lets you query evidence-based health and performance content using natural language. Instead of guessing what science says about sleep, recovery, or nutrition, you get answers grounded in actual transcripts from two leading sources — Andrew Huberman's neuroscience-focused podcast and Andy Galpin's performance science podcast — each answer citing the exact episode and timestamp it came from, so you can verify it or listen to the full context.
 
 Built as the final project for [DataTalks.Club's LLM Zoomcamp](https://github.com/DataTalksClub/llm-zoomcamp).
 
 ## Why this project?
 
-Most health advice online is either oversimplified clickbait or buried in hours of podcast audio you don't have time to listen to. This project makes that knowledge searchable and queryable — ask a specific question, get an answer with sources, and (where relevant) a recipe that fits.
+Most health advice online is either oversimplified clickbait or buried in hours of podcast audio you don't have time to listen to. This project makes that knowledge searchable and queryable — ask a specific question, get a grounded answer, and jump straight to the moment in the episode where it's discussed.
 
 ## Data sources
 
 - **Huberman Lab** podcast transcripts — neuroscience, sleep, hormones, nutrition science
 - **Andy Galpin's *Perform*** podcast transcripts — exercise physiology, recovery, performance
-- **RecipeNLG** + **USDA FoodData Central** — recipes grounded in real nutritional data
+
+> Recipe/nutrition data (RecipeNLG, USDA FoodData Central) was scoped out — the knowledge base
+> is podcast transcripts only. Pairing answers with matching recipes remains possible future work.
 
 ## Tech stack
 
 - **Orchestration:** Apache Airflow
-- **Retrieval:** Hybrid search — keyword (`minsearch`) + vector (`sqlitesearch`, local `sentence-transformers` embeddings) fused with RRF, then cross-encoder re-ranking
+- **Retrieval:** Hybrid search — keyword (`minsearch`) + vector (Postgres/**pgvector** in Docker, `sqlitesearch` locally) fused with RRF, then cross-encoder re-ranking
+- **Containerization:** docker-compose (app + Postgres/pgvector)
 - **Evaluation:** Hit-rate/MRR against an LLM-generated ground-truth set + LLM-as-a-judge
 - **Interface:** Streamlit web app (chat + citations) and a CLI
 - **Monitoring:** User feedback logged to SQLite + a Streamlit dashboard (7 charts)
 
 ## Quickstart
 
-Requires [`uv`](https://docs.astral.sh/uv/) and an OpenAI API key. Copy `.env.example` to
-`.env` and fill in `OPENAI_API_KEY`.
+Copy `.env.example` to `.env` and fill in `OPENAI_API_KEY`. The knowledge base
+(`data/documents.jsonl`, 27,085 chunks) is **committed to the repo**, so there's no transcript
+re-fetch either way.
 
-The knowledge base (`data/documents.jsonl`, 27,085 chunks) is **committed to the repo**, so you
-can query immediately — no transcript re-fetch needed.
+### Option A — Docker (everything, no local setup)
+
+```bash
+docker compose up --build
+# then open http://localhost:8501
+```
+
+Brings up Postgres + pgvector and the Streamlit app. The **first** start embeds all 27,085
+chunks into the database — CPU-bound, so allow ~15–20 minutes; progress is logged. The database
+lives in a named volume, so every later `docker compose up` starts in seconds. The build is
+resumable: if it's interrupted, the next start continues from where it stopped.
+
+### Option B — Local, no containers
+
+Requires [`uv`](https://docs.astral.sh/uv/). Uses an on-disk `sqlitesearch` index instead of
+Postgres — no infrastructure at all.
 
 ```bash
 uv sync                            # install pinned dependencies (uv.lock)
-uv run rag/build_vector_index.py   # embed the KB -> data/vector_index.db (first run downloads a ~90MB model)
+uv run rag/build_vector_index.py   # embed the KB -> data/vector_index.db (~3 min)
 
-uv run streamlit run app/app.py    # web app (recommended) — chat + feedback + dashboard
+uv run streamlit run app/app.py    # web app — chat + feedback + dashboard
 uv run rag/cli.py "how do I fall asleep faster?"   # or the CLI
 ```
+
+Both paths run identical retrieval code — `PGVECTOR_URL` (set by compose) is what selects the
+Postgres backend. Retrieval quality is equivalent; see [docs/evaluation.md](docs/evaluation.md)
+for the head-to-head.
 
 ### Rebuild the knowledge base from scratch (optional)
 
@@ -140,7 +162,7 @@ addressed (for peer reviewers):
 | Reproducibility (pinned deps, data accessible) | ✅ | KB committed (`data/documents.jsonl`) · `uv.lock` · [Quickstart](#quickstart) |
 | Interface | ✅ | Streamlit web app ([`app/app.py`](app/app.py)) + CLI ([`rag/cli.py`](rag/cli.py)) |
 | Monitoring | ✅ | 👍/👎 feedback + 7-chart dashboard ([`app/pages/1_Dashboard.py`](app/pages/1_Dashboard.py)) |
-| Containerization | ⬜ | planned (Module 7 — docker-compose) |
+| Containerization | ✅ | [`docker-compose.yml`](docker-compose.yml) — app + Postgres/pgvector, one command |
 | Hybrid search (bonus) | ✅ | RRF in [`rag/retrieve.py`](rag/retrieve.py) — the default |
 | Document re-ranking (bonus) | ✅ | cross-encoder [`rag/rerank.py`](rag/rerank.py) — biggest single gain |
 | User query rewriting (bonus) | ✅ | [`rag/query_rewrite.py`](rag/query_rewrite.py) — evaluated, measured harmful, off by default |

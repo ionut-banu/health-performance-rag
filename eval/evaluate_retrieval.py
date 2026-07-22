@@ -35,12 +35,16 @@ TOP_K = 10
 SEED = 42
 
 # label -> retrieve() kwargs.
+# Every flag is pinned explicitly — never rely on retrieve()'s defaults here. Those defaults
+# track whichever configuration currently wins, so an approach that omitted `rerank` would
+# silently change meaning the moment the production default flipped, making old and new runs
+# incomparable while still looking like valid numbers.
 ALL_APPROACHES = {
-    "keyword": {"method": "keyword"},
-    "vector": {"method": "vector"},
-    "hybrid": {"method": "hybrid"},
-    "hybrid+rerank": {"method": "hybrid", "rerank": True},
-    "hybrid+rewrite": {"method": "hybrid", "rewrite": True},
+    "keyword": {"method": "keyword", "rerank": False, "rewrite": False},
+    "vector": {"method": "vector", "rerank": False, "rewrite": False},
+    "hybrid": {"method": "hybrid", "rerank": False, "rewrite": False},
+    "hybrid+rerank": {"method": "hybrid", "rerank": True, "rewrite": False},
+    "hybrid+rewrite": {"method": "hybrid", "rerank": False, "rewrite": True},
     "hybrid+rerank+rewrite": {"method": "hybrid", "rerank": True, "rewrite": True},
 }
 # Everything except the one that makes an LLM call per question.

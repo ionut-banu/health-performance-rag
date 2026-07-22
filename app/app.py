@@ -50,11 +50,10 @@ def warm_up():
     transformer models. `cache_resource` is the right decorator here (not `cache_data`)
     because these are unserializable, long-lived objects.
     """
-    from retrieve import get_keyword_index, get_vector_index
+    from retrieve import warm_indexes
     from rerank import get_reranker
 
-    get_keyword_index()
-    get_vector_index()
+    warm_indexes()   # keyword index, plus the vector index only if we're on the SQLite backend
     get_reranker()
     return True
 

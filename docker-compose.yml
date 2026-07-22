@@ -1,0 +1,70 @@
+# Full stack: Postgres + pgvector for semantic search, and the Streamlit app.
+#
+#   cp .env.example .env    # then fill in OPENAI_API_KEY
+#   docker compose up --build
+#
+# First start embeds the knowledge base into Postgres (a few minutes). The database lives in
+# a named volume, so later starts skip that and come up immediately.
+
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rag}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ragpass}
+      POSTGRES_DB: ${POSTGRES_DB:-rag}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      # Bound to localhost only. Exposed so host-side tooling — notably the evaluation
+      # harness, which isn't shipped in the app image — can query the same index the app uses.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      # The app's index build is expensive; only start it once Postgres really accepts
+      # connections, hence depends_on: service_healthy below.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rag} -d ${POSTGRES_DB:-rag}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Setting this is what switches retrieve.py from the local SQLite vector index to
+      # pgvector — see rag/retrieve.py.
+      PGVECTOR_URL: postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-ragpass}@db:5432/${POSTGRES_DB:-rag}
+    env_file:
+      # Supplies OPENAI_API_KEY (and optionally OPENAI_MODEL). Never baked into the image.
+      - .env
+    ports:
+      - "${APP_PORT:-8501}:8501"
+    volumes:
+      # Named volume so feedback.db (monitoring data) survives restarts. Docker seeds a
+      # fresh named volume from the image, so documents.jsonl is carried in automatically.
+      - appdata:/app/data
+    restart: unless-stopped
+
+  # Opt-in: `docker compose --profile ingest run --rm ingest` to rebuild the knowledge base.
+  # Kept out of the default `up` because fetching transcripts is long-running and rate-limited.
+  ingest:
+    build: .
+    profiles: ["ingest"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGVECTOR_URL: postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-ragpass}@db:5432/${POSTGRES_DB:-rag}
+    env_file:
+      - .env
+    volumes:
+      - appdata:/app/data
+    entrypoint: ["python"]
+    command: ["ingestion/build_documents.py"]
+
+volumes:
+  pgdata:
+  appdata:

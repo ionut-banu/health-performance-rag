@@ -1,0 +1,23 @@
+# Keep the build context small. Without this, `docker build` uploads the multi-GB .venv
+# (torch alone is ~2GB), the git history, and the 112MB local vector index.
+.venv/
+.git/
+.github/
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+.env
+
+# Everything under data/ is excluded, then the knowledge base is re-included below:
+# the image needs documents.jsonl to seed Postgres, but not the raw transcripts (~GB),
+# the episode catalogs, the local sqlite vector index, or the feedback database.
+data/*
+!data/documents.jsonl
+
+# Local-only artifacts
+eval/results/
+docs/
+*.md
+!README.md
