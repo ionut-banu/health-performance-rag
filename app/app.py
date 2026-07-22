@@ -10,11 +10,23 @@ sidebar exposes the other approaches so the comparison is reproducible in the UI
 Every answer is logged to data/feedback.db and can be voted on; the Dashboard page reads
 that log. See docs/evaluation.md for why these defaults were picked.
 """
+import logging
 import os
 import sys
 import time
 
 import streamlit as st
+
+# Streamlit's file watcher walks every module in sys.modules looking for local sources to
+# hot-reload, calling hasattr(m, "__path__") on each. `transformers` registers hundreds of
+# lazy submodule placeholders whose __getattr__ triggers a real import on that check — and
+# the vision ones (yolos, zoedepth, ...) import torchvision, which we don't install since
+# nothing here processes images. The result is a wall of harmless ModuleNotFoundError
+# tracebacks in the terminal on every rerun.
+#
+# Silencing just this logger keeps hot-reload working; the usual alternative
+# (server.fileWatcherType = "none") would disable auto-reload entirely.
+logging.getLogger("streamlit.watcher.local_sources_watcher").setLevel(logging.ERROR)
 
 _APP_DIR = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_APP_DIR)
