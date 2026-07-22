@@ -107,6 +107,11 @@ def main():
     sample = rng.sample(gt, min(args.sample_size, len(gt)))
     docs = {d.id: d for d in load_documents(DOCUMENTS_PATH)}
     label, retrieve_kwargs = pick_retriever()
+    endpoint = os.environ.get("OPENAI_BASE_URL", "api.openai.com")
+    # Recorded because a stray OPENAI_BASE_URL/OPENAI_API_KEY in the shell silently
+    # redirects these calls (env vars beat .env) — judge scores from a different model
+    # aren't comparable, so the results must say which one produced them.
+    print(f"Provider: model={MODEL} endpoint={endpoint}")
     print(
         f"Judging {len(sample)} questions · retriever=`{label}` {retrieve_kwargs} · "
         f"approaches={list(APPROACHES)}"
@@ -151,7 +156,8 @@ def main():
             "be meaningless. See the ERROR lines above for the cause. Nothing was written."
         )
     winner = max(scored, key=lambda a: scored[a]["mean_score"])
-    results = {"retriever": label, "retriever_kwargs": retrieve_kwargs,
+    results = {"judge_model": MODEL, "judge_endpoint": endpoint,
+               "retriever": label, "retriever_kwargs": retrieve_kwargs,
                "sample_size": len(sample), "approaches": summary,
                "winner_by_mean_score": winner}
 

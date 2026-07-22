@@ -1,27 +1,36 @@
 {
-  "retriever": "vector",
+  "judge_model": "gpt-4o-mini",
+  "judge_endpoint": "api.openai.com",
+  "retriever": "hybrid+rerank",
+  "retriever_kwargs": {
+    "method": "hybrid",
+    "rerank": true,
+    "rewrite": false
+  },
   "sample_size": 60,
   "approaches": {
     "basic_rag": {
       "n": 60,
-      "mean_score": 0.7833,
-      "pct_relevant": 73.3,
+      "errors": 0,
+      "mean_score": 0.8667,
+      "pct_relevant": 80.0,
       "labels": {
-        "RELEVANT": 44,
-        "PARTLY_RELEVANT": 6,
-        "NON_RELEVANT": 10
+        "RELEVANT": 48,
+        "PARTLY_RELEVANT": 8,
+        "NON_RELEVANT": 4
       }
     },
     "agentic_rag": {
       "n": 60,
+      "errors": 0,
       "mean_score": 0.8,
-      "pct_relevant": 73.3,
+      "pct_relevant": 70.0,
       "labels": {
-        "RELEVANT": 44,
-        "PARTLY_RELEVANT": 8,
-        "NON_RELEVANT": 8
+        "RELEVANT": 42,
+        "PARTLY_RELEVANT": 12,
+        "NON_RELEVANT": 6
       }
     }
   },
-  "winner_by_mean_score": "agentic_rag"
+  "winner_by_mean_score": "basic_rag"
 }

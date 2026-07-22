@@ -117,6 +117,14 @@ def main():
     parser.add_argument("--questions-per-chunk", type=int, default=5)
     args = parser.parse_args()
 
+    # Record the provider explicitly. A stray OPENAI_BASE_URL/OPENAI_API_KEY in the shell
+    # silently redirects these calls (env vars beat .env), which would quietly produce a
+    # ground-truth set from a different model than the one the results claim.
+    print(
+        f"Provider: model={MODEL} "
+        f"endpoint={os.environ.get('OPENAI_BASE_URL', 'api.openai.com')}"
+    )
+
     docs = load_documents(DOCUMENTS_PATH)
     sampled = stratified_sample(docs, args.sample_size)
     done = load_done_chunk_ids(OUTPUT_PATH)

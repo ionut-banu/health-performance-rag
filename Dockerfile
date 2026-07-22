@@ -41,6 +41,10 @@ COPY app/ ./app/
 COPY ingestion/ ./ingestion/
 COPY data/documents.jsonl ./data/documents.jsonl
 
+# Mutable state (feedback.db) lives here and is the only volume-mounted path — keeping it
+# out of /app/data so the shipped knowledge base in the image is never shadowed by a volume.
+RUN mkdir -p /app/state
+
 COPY entrypoint.sh ./
 RUN chmod +x entrypoint.sh
 

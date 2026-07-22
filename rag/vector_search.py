@@ -31,7 +31,7 @@ def build_vector_index(
     # id_field is omitted: the library appends it to keyword_fields, and "id"
     # collides with the docs table's own primary key. Our doc id round-trips
     # inside the stored payload regardless; upsert-dedup only matters for the
-    # shared text+vector file we'd build for hybrid search in Module 6.
+    # shared text+vector file that hybrid search would need.
     index = VectorSearchIndex(
         mode="hnsw",
         keyword_fields=KEYWORD_FIELDS,

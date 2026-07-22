@@ -3,8 +3,7 @@ Evaluate retrieval approaches against the ground-truth set.
 
 For every ground-truth (question -> chunk_id) pair, retrieve the top-10 with each approach
 and record the rank of the known-relevant chunk, then report hit-rate@k and MRR. This is the
-"multiple approaches evaluated, best one used" evidence for the rubric, and the harness that
-proved out each Module 6 change.
+"multiple approaches evaluated, best one used" evidence for the rubric.
 
     uv run eval/evaluate_retrieval.py                              # free approaches, all 750 pairs
     uv run eval/evaluate_retrieval.py --approaches hybrid,hybrid+rewrite --limit 250
@@ -17,18 +16,15 @@ import json
 import os
 import random
 import sys
-from collections import Counter
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # repo root
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "rag"))
 
-from schema import load_documents
 from retrieve import retrieve
 from embeddings import EMBEDDING_MODEL
 from metrics import hit_rate, mrr
 
 GROUND_TRUTH_PATH = "eval/ground_truth.jsonl"
-DOCUMENTS_PATH = "data/documents.jsonl"
 RESULTS_DIR = "eval/results"
 K_VALUES = [1, 3, 5, 10]
 TOP_K = 10
@@ -50,24 +46,16 @@ ALL_APPROACHES = {
 # Everything except the one that makes an LLM call per question.
 DEFAULT_APPROACHES = ["keyword", "vector", "hybrid", "hybrid+rerank"]
 
-# Since Module 6 every chunk fits the embedding window, so the old truncated/not-truncated
-# split is moot. Bucket instead by whether the ground-truth chapter actually needed
-# splitting — that's the population sub-chunking targeted, so it shows if the fix landed.
-SHORT, LONG = "short (1 sub-chunk)", "long (2+ sub-chunks)"
-BUCKETS = (SHORT, LONG)
-
 
 def rank_of(chunk_id: str, results: list[dict]) -> int | None:
     """
-    Rank of the relevant chunk, or None if absent.
+    1-based rank of the relevant chunk in the results, or None if absent.
 
-    Ground truth was collected on chapter-sized chunks; after Module 6's sub-chunking a
-    chapter is split into several documents whose `parent_chunk_id` is the original
-    chapter id. Matching on either id keeps the same 750 pairs valid across both corpora,
-    so before/after numbers are directly comparable.
+    Matching is exact on the chunk id: ground truth targets one specific ~350-token passage,
+    so retrieving a neighbouring passage from the same chapter is a miss, not a hit.
     """
     for i, r in enumerate(results, 1):
-        if r.get("id") == chunk_id or r.get("parent_chunk_id") == chunk_id:
+        if r.get("id") == chunk_id:
             return i
     return None
 
@@ -100,27 +88,15 @@ def main():
         gt = random.Random(SEED).sample(gt, args.limit)
     print(f"Evaluating {approaches} on {len(gt)} ground-truth pairs")
 
-    # How many sub-chunks each ground-truth chapter was split into (1 = never needed it).
-    sub_counts = Counter(
-        d.metadata.get("parent_chunk_id") for d in load_documents(DOCUMENTS_PATH)
-    )
-
     ranks = {a: [] for a in approaches}
-    bucket_ranks = {a: {b: [] for b in BUCKETS} for a in approaches}
-
     for i, row in enumerate(gt, 1):
-        cid = row["chunk_id"]
-        bucket = SHORT if sub_counts.get(cid, 0) <= 1 else LONG
         for a in approaches:
             results = retrieve(row["question"], num_results=TOP_K, **ALL_APPROACHES[a])
-            r = rank_of(cid, results)
-            ranks[a].append(r)
-            bucket_ranks[a][bucket].append(r)
+            ranks[a].append(rank_of(row["chunk_id"], results))
         if i % 50 == 0 or i == len(gt):
             print(f"  evaluated {i}/{len(gt)}")
 
     overall = {a: summarize(ranks[a]) for a in approaches}
-    buckets = {a: {b: summarize(bucket_ranks[a][b]) for b in BUCKETS} for a in approaches}
     winner = max(approaches, key=lambda a: overall[a]["mrr"])
 
     results = {
@@ -128,7 +104,6 @@ def main():
         "embedding_model": EMBEDDING_MODEL,
         "approaches": approaches,
         "overall": overall,
-        "buckets": buckets,
         "winner_by_mrr": winner,
     }
 
@@ -143,38 +118,19 @@ def main():
 
 
 def _write_markdown(results: dict, out: str) -> None:
-    approaches = results["approaches"]
     lines = [
         "# Retrieval evaluation",
         "",
         f"Ground-truth pairs: **{results['ground_truth_pairs']}** · "
         f"embedding model: `{results['embedding_model']}`",
         "",
-        "## Overall",
-        "",
         "| Approach | HR@1 | HR@3 | HR@5 | HR@10 | MRR |",
         "|---|---|---|---|---|---|",
     ]
-    for a in approaches:
+    for a in results["approaches"]:
         o = results["overall"][a]
         lines.append(f"| {a} | {o['hr@1']} | {o['hr@3']} | {o['hr@5']} | {o['hr@10']} | {o['mrr']} |")
-    lines += [
-        "",
-        f"**Winner by MRR: `{results['winner_by_mrr']}`**",
-        "",
-        "## Chapter-size buckets",
-        "",
-        "Split by whether the ground-truth chapter actually needed sub-chunking. The `long`",
-        "bucket is the population Module 6 targeted, so that's where the gain should show.",
-        "",
-        "| Approach | Bucket | n | HR@5 | MRR |",
-        "|---|---|---|---|---|",
-    ]
-    for a in approaches:
-        for b in BUCKETS:
-            s = results["buckets"][a][b]
-            lines.append(f"| {a} | {b} | {s['n']} | {s['hr@5']} | {s['mrr']} |")
-    lines.append("")
+    lines += ["", f"**Winner by MRR: `{results['winner_by_mrr']}`**", ""]
     with open(os.path.join(RESULTS_DIR, f"{out}.md"), "w") as f:
         f.write("\n".join(lines))
 

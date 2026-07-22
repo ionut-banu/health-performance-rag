@@ -37,15 +37,17 @@ services:
       # Setting this is what switches retrieve.py from the local SQLite vector index to
       # pgvector — see rag/retrieve.py.
       PGVECTOR_URL: postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-ragpass}@db:5432/${POSTGRES_DB:-rag}
+      FEEDBACK_DB_PATH: /app/state/feedback.db
     env_file:
       # Supplies OPENAI_API_KEY (and optionally OPENAI_MODEL). Never baked into the image.
       - .env
     ports:
       - "${APP_PORT:-8501}:8501"
     volumes:
-      # Named volume so feedback.db (monitoring data) survives restarts. Docker seeds a
-      # fresh named volume from the image, so documents.jsonl is carried in automatically.
-      - appdata:/app/data
+      # Only mutable state is mounted. Do NOT mount /app/data: that holds the shipped
+      # knowledge base from the image, and a named volume would pin the copy captured when
+      # the volume was first created — so an updated documents.jsonl would never take effect.
+      - appstate:/app/state
     restart: unless-stopped
 
   # Opt-in: `docker compose --profile ingest run --rm ingest` to rebuild the knowledge base.
@@ -61,10 +63,10 @@ services:
     env_file:
       - .env
     volumes:
-      - appdata:/app/data
+      - appstate:/app/state
     entrypoint: ["python"]
     command: ["ingestion/build_documents.py"]
 
 volumes:
   pgdata:
-  appdata:
+  appstate:

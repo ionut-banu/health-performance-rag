@@ -14,7 +14,12 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone
 
-FEEDBACK_DB_PATH = "data/feedback.db"
+# Mutable state, deliberately kept OUT of data/. data/ holds the shipped knowledge base,
+# which is baked into the image; mounting a volume over it would shadow the image's copy
+# (Docker only seeds a named volume when it is first created), so a rebuilt image with an
+# updated documents.jsonl would never reach a running container. Feedback therefore lives
+# on its own path, and only that path is volume-mounted.
+FEEDBACK_DB_PATH = os.environ.get("FEEDBACK_DB_PATH", "data/feedback.db")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS interactions (

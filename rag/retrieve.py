@@ -2,8 +2,8 @@
 Backend-agnostic retrieval dispatch.
 
 Both retrievers return the same flattened dict shape (see search.flatten), so the
-RAG loops in rag.py stay backend-agnostic. Adding hybrid search in Module 6 means
-adding one more branch here, not touching rag.py.
+RAG loops in rag.py stay backend-agnostic: adding a retrieval strategy means adding a
+branch here, not touching rag.py.
 
   method="keyword"  Module 1: minsearch TF-IDF index (in-memory).
   method="vector"   Module 2: HNSW index over local embeddings.
@@ -99,9 +99,9 @@ def retrieve(
     query: str,
     num_results: int = 5,
     source: str | None = None,
-    # Defaults are the measured winner from Module 6's evaluation (docs/evaluation.md):
-    # hybrid + cross-encoder re-rank scored MRR 0.614 / HR@1 0.523, vs 0.413 / 0.316 for
-    # the previous vector-only default — a ~49% MRR improvement on the same 750 pairs.
+    # Defaults are the measured winner — see docs/evaluation.md for current numbers.
+    # Deliberately no figures inline: they go stale every time the corpus or ground truth
+    # is regenerated, and a wrong number in a comment is worse than no number.
     method: str = "hybrid",
     candidates: int = 20,    # per-backend depth fused, and the pool the re-ranker reorders
     rerank: bool = True,     # Module 6: cross-encoder second pass over the candidates

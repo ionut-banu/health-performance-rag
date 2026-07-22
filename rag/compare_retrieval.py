@@ -3,8 +3,8 @@ Module 2: qualitative side-by-side of keyword (Module 1) vs vector (Module 2) re
 
 For each sample query, prints the top-k chunks from each backend so you can eyeball
 where semantic search surfaces relevant episodes that lexical search misses (and vice
-versa). This is a sanity check, not a metric — rigorous hit-rate/MRR evaluation over a
-ground-truth query->doc set is Module 4.
+versa). This is a sanity check, not a metric — the rigorous hit-rate/MRR evaluation lives in
+eval/evaluate_retrieval.py.
 
     uv run rag/compare_retrieval.py
 """
