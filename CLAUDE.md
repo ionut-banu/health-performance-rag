@@ -50,8 +50,10 @@ All core rubric criteria are built (see the Build sequence below). What's left i
 
 1. **Screenshots** for the README — the rubric guidelines ask for them, and the monitoring
    dashboard needs real usage before it's worth capturing. Never seed synthetic feedback.
-2. **Cloud deployment** (+2 bonus) and **Airflow** (Module 3 — earns 0 rubric points, since
-   ingestion already scores full marks as automated Python scripts).
+2. **Cloud deployment** (+2 bonus) — the only remaining point-earning work.
+
+Orchestration (Airflow) was considered and **decided against** — see the Orchestration
+section for why. It earns 0 rubric points, so it's not a next step.
 
 **After any change to `data/documents.jsonl`, rebuild both indexes:**
 `rm data/vector_index.db && uv run rag/build_vector_index.py` for local, and restart the
@@ -137,13 +139,19 @@ Every ingested doc must conform to this shape (defined in `schema.py`):
 - `youtube-transcript-api` >= 1.2.x — static `get_transcript()` was removed in v1.2.0.
   Correct API: `YouTubeTranscriptApi().fetch(video_id).to_raw_data()`
 
-## Orchestration
+## Orchestration — decided against (2026-07-23)
 
-**Apache Airflow** — chosen over Kestra (which the course teaches). Since it's not covered in the course, document any non-trivial DAG setup in the README for reviewers.
+**No orchestrator.** The rubric awards full ingestion marks for "an automated Python script
+*or* a special tool (e.g., Mage, dlt, Airflow, Prefect)" — the three resumable ingestion
+scripts already earn 2/2, so Airflow would add **0 points**. It was ruled out because:
 
-- Don't introduce Airflow until the ingestion scripts work standalone in plain Python.
-- Pin the Airflow version explicitly in `pyproject.toml` (current stable line: 3.2.x).
-- Airflow is a Module 3 concern — don't add it earlier.
+- The project's focus is RAG, not data engineering.
+- Ingestion is a one-time build that's already done and committed (`data/documents.jsonl`);
+  there's no recurring job for a scheduler to orchestrate.
+- Airflow (scheduler + metadata DB + webserver) would bloat `docker-compose.yml` and work
+  against the "clone and run" reproducibility story, for a pipeline reviewers are told not to run.
+
+Don't add Airflow (or any orchestrator) without an explicit reason to revisit this.
 
 ## Build sequence (matches LLM Zoomcamp modules)
 
@@ -151,7 +159,7 @@ Every ingested doc must conform to this shape (defined in `schema.py`):
 |---|---|---|
 | 1. Agentic RAG | ✅ built | `rag/` — `minsearch` keyword index + retrieve→prompt→LLM (`rag()`) and agentic function-calling (`agentic_rag()`), OpenAI `gpt-4o-mini` |
 | 2. Vector Search | ✅ built | `rag/vector_search.py` — `sqlitesearch` HNSW index over local `multi-qa-MiniLM-L6-cos-v1` embeddings (`rag/embeddings.py`); `rag/retrieve.py` dispatches the backends via `--retriever` (Module 6 added `hybrid` + re-ranking on top); `rag/compare_retrieval.py` shows the side-by-side. PGVector landed in Module 7 as the containerized backend; sqlitesearch remains the infra-free local default. |
-| 3. Orchestration | not started | Wrap ingestion in an Airflow DAG |
+| 3. Orchestration | skipped (optional) | Ingestion already scores full marks as automated Python scripts, so an Airflow DAG earns **0 additional rubric points**. Deliberately not built — the project's focus is RAG, not data engineering, and the one-time ingestion is already done and committed. |
 | 4. Evaluation | ✅ built | `eval/` — 750-pair LLM-generated ground truth; retrieval hit-rate/MRR (`evaluate_retrieval.py`) and LLM-as-judge (`evaluate_llm.py`). Ground truth is **sub-chunk level** with exact id matching — retrieving a neighbouring passage is a miss. **Don't hard-code result figures anywhere but `docs/evaluation.md`**; they change whenever the corpus or ground truth is regenerated. |
 | 5. Monitoring | ✅ built | `app/feedback.py` logs every interaction (question, answer, sources, config, latency, vote) to `data/feedback.db`; `app/pages/1_Dashboard.py` charts it (7 charts). **Never seed synthetic rows** — the dashboard is evidence of real usage. |
 | 6. Best Practices | ✅ built | Sub-chunking (`chunk_by_chapters.py`), hybrid RRF (`retrieve.py`), cross-encoder re-ranking (`rag/rerank.py`), query rewriting (`rag/query_rewrite.py`). **Default is hybrid+rerank**, the measured winner. Query rewriting measured as *harmful* → shipped but off by default. See `docs/evaluation.md`. |
@@ -166,7 +174,7 @@ techniques before its row is in progress (e.g. no reranking code before Module 6
 - Keep ingestion, chunking, and retrieval as separate, testable modules — not one script.
 - Any new env var goes in `.env.example` (no real secrets committed).
 - Functions over classes for pipeline scripts — keep it simple until a class hierarchy is
-  genuinely justified (revisit when wiring into Airflow DAGs at Module 3).
+  genuinely justified.
 
 ## Project evaluation rubric
 
@@ -180,7 +188,7 @@ against this rubric — it defines what scores full points.
 | Retrieval evaluation | 2 | Multiple approaches evaluated — ✅ keyword vs vector vs hybrid vs hybrid+rerank (`docs/evaluation.md`) |
 | LLM evaluation | 2 | Multiple approaches evaluated — ✅ basic vs agentic (LLM-as-judge) |
 | Interface | 2 | UI (Streamlit) or API (FastAPI) — ✅ `app/app.py` |
-| Ingestion pipeline | 2 | Automated (Airflow DAG) |
+| Ingestion pipeline | 2 | Automated ingestion — ✅ 3 resumable Python scripts (guidelines award full marks for a script *or* a tool like Airflow; a script suffices) |
 | Monitoring | 2 | User feedback + dashboard (5+ charts) — ✅ 👍/👎 + 7 charts |
 | Containerization | 2 | Full docker-compose — ✅ app + Postgres/pgvector |
 | Reproducibility | 2 | Clear instructions, pinned deps, data accessible |
