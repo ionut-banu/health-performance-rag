@@ -22,7 +22,7 @@ Most health advice online is either oversimplified clickbait or buried in hours 
 
 ## Tech stack
 
-- **Orchestration:** Apache Airflow
+- **Orchestration:** *(planned — Apache Airflow)*
 - **Retrieval:** Hybrid search — keyword (`minsearch`) + vector (Postgres/**pgvector** in Docker, `sqlitesearch` locally) fused with RRF, then cross-encoder re-ranking
 - **Containerization:** docker-compose (app + Postgres/pgvector)
 - **Evaluation:** Hit-rate/MRR against an LLM-generated ground-truth set + LLM-as-a-judge
