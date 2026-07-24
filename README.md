@@ -193,6 +193,12 @@ addressed (for peer reviewers):
 | Document re-ranking (bonus) | ✅ | cross-encoder [`rag/rerank.py`](rag/rerank.py) — biggest single gain |
 | User query rewriting (bonus) | ✅ | [`rag/query_rewrite.py`](rag/query_rewrite.py) — evaluated, measured harmful, off by default |
 
+## New to RAG?
+
+[docs/concepts.md](docs/concepts.md) explains every idea this project uses — vector search,
+hybrid search, re-ranking, hit-rate, MRR, LLM-as-a-judge, and more — in plain language, no prior
+knowledge assumed.
+
 ## Status
 
 🚧 Actively in development, built module-by-module alongside LLM Zoomcamp 2026.
