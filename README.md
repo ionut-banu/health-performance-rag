@@ -179,8 +179,10 @@ ground-truth set, and the winners are wired in as defaults. Full report + reprod
   | hybrid | 0.224 | 0.483 | 0.331 |
   | **hybrid + re-rank** | **0.331** | **0.555** | **0.429** |
 
-  Ground truth targets one specific ~350-token passage and matching is exact, so retrieving a
-  neighbouring passage from the same chapter counts as a miss — a deliberately strict bar.
+  These absolute numbers are held down by a **deliberately strict metric**: ground truth targets
+  one specific ~350-token passage with exact matching, so retrieving a neighbouring passage from
+  the same chapter counts as a miss. The end-to-end measure that reflects what users actually
+  get — answer quality, judged by an LLM — is **80% relevant** (see Generation below).
 
 - **Generation** (LLM-as-judge) — **basic RAG wins**, 0.867 vs 0.800 for agentic (80% vs 70%
   answers rated relevant). Basic is the default; `--agentic` remains available.
