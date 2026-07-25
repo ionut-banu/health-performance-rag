@@ -47,6 +47,17 @@ by the commands at the bottom.
 
 ## Retrieval
 
+> **Reading these numbers** — each test question has exactly one correct chunk.
+>
+> - **HR@k** (hit-rate) = fraction of questions where the correct chunk was in the top *k*
+>   results. HR@1 is strict (must be ranked #1); HR@10 is lenient (anywhere in the top 10).
+> - **MRR** (mean reciprocal rank) = like HR, but rewards ranking the correct chunk *higher*.
+>   Each question scores `1 / (its rank)` — rank 1 → 1.0, rank 2 → 0.5, rank 4 → 0.25, not
+>   found → 0 — averaged over all questions. So MRR ≈ 0.43 means the right chunk typically sits
+>   around position 2–3.
+>
+> Higher is better for both. Fuller explanations: [concepts.md](concepts.md).
+
 Local `sqlitesearch` backend, all 750 pairs:
 
 | Approach | HR@1 | HR@3 | HR@5 | HR@10 | MRR |
