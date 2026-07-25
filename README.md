@@ -138,8 +138,30 @@ uv run streamlit run app/app.py
   positive rate over time, answer latency, most-cited episodes, retrieval config mix, and
   citations by podcast source — plus headline metrics.
 
-> The dashboard reflects **real usage only** — no synthetic data is seeded. It starts empty;
-> ask a few questions and vote to populate it.
+> The dashboard reflects **real usage only** — no synthetic data is seeded. The screenshots
+> below are from a real session; a fresh install starts empty until you ask questions and vote.
+
+### Screenshots
+
+Chat — a grounded answer with clickable **jump-to-timestamp** citations, retrieval options in the sidebar:
+
+![Chat page showing a grounded answer with citations](docs/images/chat-answer.png)
+
+Each answer lists its sources; every citation links to the exact moment in the episode:
+
+![Expanded sources list with timestamped links](docs/images/chat-sources.png)
+
+Monitoring dashboard over real logged usage (here: 25 questions, 91% positive) — headline metrics, question volume, and feedback breakdown:
+
+![Dashboard headline metrics, questions per day, and feedback breakdown](docs/images/dashboard-metrics.png)
+
+Positive-rate trend, answer latency, most-cited episodes, and which retrieval configuration each question used:
+
+![Dashboard charts: positive rate, latency, most-cited episodes, retrieval config mix](docs/images/dashboard-charts.png)
+
+Citations split by podcast source, plus a recent-questions log with config, latency, and vote:
+
+![Dashboard citations by source and recent-questions table](docs/images/dashboard-recent.png)
 
 ## Evaluation
 
@@ -186,8 +208,8 @@ addressed (for peer reviewers):
 | LLM evaluation (multiple approaches) | ✅ | [docs/evaluation.md](docs/evaluation.md) — basic vs agentic, LLM-as-judge |
 | Ingestion pipeline (automated) | ✅ | [`ingestion/`](ingestion/) — 3 automated resumable scripts, **already run**; output committed as `data/documents.jsonl` so no fetching is required. [Details](#ingestion-pipeline-already-run) · [docs/pipeline.md](docs/pipeline.md) |
 | Reproducibility (pinned deps, data accessible) | ✅ | Dataset ships in-repo (35,035 chunks) — clone and run, no ingestion needed · `uv.lock` pins every version · [Quickstart](#quickstart) |
-| Interface | ✅ | Streamlit web app ([`app/app.py`](app/app.py)) + CLI ([`rag/cli.py`](rag/cli.py)) |
-| Monitoring | ✅ | 👍/👎 feedback + 7-chart dashboard ([`app/pages/1_Dashboard.py`](app/pages/1_Dashboard.py)) |
+| Interface | ✅ | Streamlit web app ([`app/app.py`](app/app.py)) + CLI ([`rag/cli.py`](rag/cli.py)) · [screenshots](#screenshots) |
+| Monitoring | ✅ | 👍/👎 feedback + 7-chart dashboard ([`app/pages/1_Dashboard.py`](app/pages/1_Dashboard.py)) · [screenshots](#screenshots) |
 | Containerization | ✅ | [`docker-compose.yml`](docker-compose.yml) — app + Postgres/pgvector, one command |
 | Hybrid search (bonus) | ✅ | RRF in [`rag/retrieve.py`](rag/retrieve.py) — the default |
 | Document re-ranking (bonus) | ✅ | cross-encoder [`rag/rerank.py`](rag/rerank.py) — biggest single gain |
